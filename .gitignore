@@ -336,4 +336,11 @@ rag/main_backup.py
 RAG_IMPLEMENTATION_SUMMARY_backup.md
 external_team_example.py
 README_INTEGRATION.md
-papers_text/*
+
+EXTERNAL_TEAM_GUIDE.md
+test_dynamic_rag.py
+
+config.json
+arxiv_papers.jsonl
+papers_text/
+
