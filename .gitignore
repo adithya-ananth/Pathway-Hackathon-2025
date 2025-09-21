@@ -328,3 +328,7 @@ search_results_*.json
 # Evaluation and benchmark results
 eval_results/
 benchmark_results/
+
+# Miscellaneous
+RAG_IMPLEMENTATION_SUMMARY.md
+query_results.jsonl
