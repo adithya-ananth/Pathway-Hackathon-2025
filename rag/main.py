@@ -431,6 +431,8 @@ def format_document(doc):
         "similarity_score": _extract_score_from_result(doc),
         "url": metadata.get("url", ""),
         "primary_category": metadata.get("primary_category", ""),
+        # include file_path so downstream printing can surface where text came from
+        "file_path": metadata.get("file_path", None),
         "matched_keywords": [],
     }
 
@@ -498,6 +500,79 @@ def pretty_print_results(original_query: str, results) -> str:
         print(f"   id: {doc_id}")
 
     return f"printed_{len(results)}"
+
+
+def print_final_summary(original_query: str, results) -> str:
+    """Print a concise FINAL RAG RESULT for the top match, including file_path if available.
+
+    Be robust to different result item shapes (formatted dicts, raw retrieval objects, etc.).
+    """
+    try:
+        print("\n=== FINAL RAG RESULT ===")
+        print(f"Query: {original_query}")
+        if not results:
+            print("No results found.")
+            return "final_0"
+
+        # Safely pick the first element if it's an indexable sequence
+        top_raw = None
+        try:
+            top_raw = results[0]
+        except Exception:
+            # Results may be an iterator; try to coerce to list
+            try:
+                seq = list(results)
+                top_raw = seq[0] if seq else None
+            except Exception:
+                top_raw = None
+
+        if top_raw is None:
+            print("No results found.")
+            return "final_0"
+
+        # Coerce to a formatted dict with expected keys
+        def _coerce_formatted(doc) -> dict:
+            try:
+                # If it's already a dict with typical keys, use as-is
+                if isinstance(doc, dict) and any(k in doc for k in ("id", "title", "abstract", "file_path")):
+                    # Ensure similarity_score exists for consistent shape
+                    if "similarity_score" not in doc:
+                        try:
+                            doc = {**doc, "similarity_score": doc.get("score", 0.0)}
+                        except Exception:
+                            doc = {**doc, "similarity_score": 0.0}
+                    return doc
+                # Otherwise, build from metadata extractor
+                md = _extract_metadata_from_result(doc)
+                return {
+                    "id": md.get("id", "unknown"),
+                    "title": md.get("title", ""),
+                    "abstract": md.get("abstract", ""),
+                    "authors": md.get("authors", []),
+                    "similarity_score": _extract_score_from_result(doc),
+                    "url": md.get("url", ""),
+                    "primary_category": md.get("primary_category", ""),
+                    "file_path": md.get("file_path"),
+                    "matched_keywords": [],
+                }
+            except Exception:
+                return {"id": "unknown", "title": "", "url": "", "file_path": None, "similarity_score": 0.0}
+
+        top = _coerce_formatted(top_raw)
+
+        title = top.get("title", "")
+        doc_id = top.get("id", "unknown")
+        url = top.get("url", "")
+        file_path = top.get("file_path")
+        print(f"Top Result: {title}")
+        print(f"   id: {doc_id}")
+        if url:
+            print(f"   url: {url}")
+        if file_path:
+            print(f"   file_path: {file_path}")
+        return "final_1"
+    except Exception:
+        return "final_error"
 
 
 def create_sample_data():
@@ -706,6 +781,16 @@ def create_rag_system():
     )
     # Materialize the printer so the side-effecting prints actually execute
     pw.io.jsonlines.write(printer, "./.console_prints.jsonl")
+
+    # Print a concise final result summary for the top match, including file_path
+    final_printer = results.select(
+        status=pw.apply(
+            lambda q, rs: print_final_summary(q, rs),
+            pw.this.original_query,
+            pw.this.results,
+        )
+    )
+    pw.io.jsonlines.write(final_printer, "./.final_console_prints.jsonl")
     
     print("\n📋 Workflow Summary:")
     print("   1. Other team drops query.jsonl in ./query_stream/")

@@ -1,11 +1,7 @@
 {
     "search_keywords": [
-        "ORB-SLAM3",
-        "SLAM",
-        "Visual Odometry",
-        "Computer Vision",
-        "Object Detection",
-        "Transformers",
-        "Real-time Systems"
+        "Event-Based Vision",
+        "Monocular Depth Estimation",
+        "Depth Estimation"
     ]
 }
