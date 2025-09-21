@@ -839,6 +839,49 @@ def create_rag_system():
     return vector_store, results
 
 
+def _safe_get_from_doc(doc, key: str, default=None):
+    """
+    Safely extract a value from a document, handling both dict and Pathway Json objects
+    """
+    try:
+        # Try dictionary access first
+        if hasattr(doc, 'get'):
+            return doc.get(key, default)
+        # Try Json object access
+        elif hasattr(doc, key):
+            return getattr(doc, key)
+        # Try indexing
+        elif hasattr(doc, '__getitem__'):
+            try:
+                return doc[key]
+            except (KeyError, TypeError):
+                return default
+        else:
+            return default
+    except Exception:
+        return default
+
+
+def _safe_convert_to_list(val):
+    """
+    Safely convert a value to a list, handling different input types
+    """
+    try:
+        if val is None:
+            return []
+        if isinstance(val, list):
+            return val
+        if isinstance(val, (str, int, float)):
+            return [val]
+        # Try to iterate and convert
+        try:
+            return list(val)
+        except (TypeError, AttributeError):
+            return [val] if val is not None else []
+    except Exception:
+        return []
+
+
 def answer_query_with_context(query: str, search_results: list, keywords: list[str] | None = None, max_context_length: int = 4000):
     """
     Generate a comprehensive answer based on retrieved documents, query, and keywords
@@ -859,21 +902,34 @@ def answer_query_with_context(query: str, search_results: list, keywords: list[s
     
     # Process each document to extract relevant information
     for i, doc in enumerate(search_results[:5], 1):  # Process top 5 results
-        # Collect metadata
-        matched_kws = doc.get('matched_keywords', [])
+        # Collect metadata using safe extraction
+        matched_kws = _safe_get_from_doc(doc, 'matched_keywords', [])
+        matched_kws = _safe_convert_to_list(matched_kws)
         all_matched_keywords.update(matched_kws)
         
-        category = doc.get('primary_category', 'Unknown')
-        primary_categories.add(category)
+        category = _safe_get_from_doc(doc, 'primary_category', 'Unknown')
+        if category:
+            primary_categories.add(str(category))
         
-        doc_authors = doc.get('authors', [])
-        if isinstance(doc_authors, list):
-            authors.update(doc_authors[:2])  # Limit to first 2 authors per paper
+        doc_authors = _safe_get_from_doc(doc, 'authors', [])
+        doc_authors = _safe_convert_to_list(doc_authors)
+        if doc_authors:
+            authors.update(str(author) for author in doc_authors[:2])  # Limit to first 2 authors per paper
         
         # Create document summary
-        title = doc.get('title', 'Untitled')
-        abstract = doc.get('abstract', 'No abstract available')
-        score = doc.get('similarity_score', 0.0)
+        title = _safe_get_from_doc(doc, 'title', 'Untitled')
+        abstract = _safe_get_from_doc(doc, 'abstract', 'No abstract available')
+        score = _safe_get_from_doc(doc, 'similarity_score', 0.0)
+        
+        # Ensure we have strings
+        title = str(title) if title else 'Untitled'
+        abstract = str(abstract) if abstract else 'No abstract available'
+        
+        # Convert score to float if possible
+        try:
+            score = float(score) if score is not None else 0.0
+        except (ValueError, TypeError):
+            score = 0.0
         
         # Truncate abstract if too long
         if len(abstract) > 300:
@@ -883,7 +939,7 @@ def answer_query_with_context(query: str, search_results: list, keywords: list[s
 Document {i}: {title}
 Relevance Score: {score:.3f}
 Abstract: {abstract}
-Matched Terms: {', '.join(matched_kws) if matched_kws else 'None'}"""
+Matched Terms: {', '.join(str(kw) for kw in matched_kws) if matched_kws else 'None'}"""
         
         document_summaries.append(doc_summary)
         
@@ -913,13 +969,20 @@ Matched Terms: {', '.join(matched_kws) if matched_kws else 'None'}"""
     
     # Generate insights based on document analysis
     if len(primary_categories) > 1:
-        answer_parts.append(f"This is an interdisciplinary topic spanning {', '.join(sorted(primary_categories))} domains.")
+        # Convert categories to strings for safe sorting
+        safe_categories = [str(cat) for cat in primary_categories if cat]
+        answer_parts.append(f"This is an interdisciplinary topic spanning {', '.join(sorted(safe_categories))} domains.")
     else:
-        answer_parts.append(f"This research primarily falls within the {list(primary_categories)[0]} domain.")
+        # Convert to string safely
+        first_category = str(list(primary_categories)[0]) if primary_categories else "Unknown"
+        answer_parts.append(f"This research primarily falls within the {first_category} domain.")
     
     # Synthesize key findings
     if all_matched_keywords:
-        answer_parts.append(f"\nThe most relevant aspects identified include: {', '.join(sorted(all_matched_keywords))}.")
+        # Convert all keywords to strings for safe joining and sorting
+        safe_keywords = [str(kw) for kw in all_matched_keywords if kw]
+        if safe_keywords:
+            answer_parts.append(f"\nThe most relevant aspects identified include: {', '.join(sorted(safe_keywords))}.")
     
     # Add synthesized insights from abstracts
     common_themes = _extract_common_themes(key_findings)
@@ -954,7 +1017,9 @@ Matched Terms: {', '.join(matched_kws) if matched_kws else 'None'}"""
     answer_parts.append("Consider exploring the full text of the most relevant documents above, ")
     answer_parts.append("particularly those with the highest relevance scores. ")
     if keywords:
-        answer_parts.append(f"You may also want to search for related terms such as: {_suggest_related_keywords(keywords, all_matched_keywords)}.")
+        # Convert matched keywords to strings for safe processing
+        safe_matched_keywords = set(str(kw) for kw in all_matched_keywords if kw)
+        answer_parts.append(f"You may also want to search for related terms such as: {_suggest_related_keywords(keywords, safe_matched_keywords)}.")
     
     return '\n'.join(answer_parts)
 
