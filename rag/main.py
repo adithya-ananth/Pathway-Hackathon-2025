@@ -1,12 +1,33 @@
 import pathway as pw
-import pathway as pw
 from pathway.xpacks.llm import embedders
 from pathway.xpacks.llm.vector_store import VectorStoreServer
 import os
 import json
 import time
-import json
-import os
+
+# ----------------------------
+# Helpers (module-level)
+# ----------------------------
+
+def _resolve_project_path(relative_or_abs_path: str) -> str:
+    """Resolve relative file paths like 'papers_text/xyz.txt' relative to repo root."""
+    if relative_or_abs_path is None:
+        raise ValueError("file_path is None; expected a path to a .txt file")
+    base_dir = os.path.dirname(os.path.dirname(__file__))
+    return (
+        relative_or_abs_path
+        if os.path.isabs(relative_or_abs_path)
+        else os.path.join(base_dir, relative_or_abs_path)
+    )
+
+
+def read_text_from_file(file_path: str) -> str:
+    """Read UTF-8 text from a local .txt file path (absolute or project-relative)."""
+    resolved_path = _resolve_project_path(file_path)
+    with open(resolved_path, "r", encoding="utf-8") as f:
+        read_data = f.read()
+        print("READ DATA: ", read_data[:50])
+        return read_data
 
 class ContentSchema(pw.Schema):
     # Match content_stream/complete_papers_data.jsonl exactly
@@ -38,16 +59,16 @@ def setup_dynamic_rag_pipeline(content_table: pw.Table[ContentSchema]):
     """
     
     # Transform the content table to prepare data for vector store
-    # The 'text' field will be embedded, everything else stored as metadata
-    def _choose_text(text, title, abstract):
-        if text:
-            return text
-        return (title or "") + "\n\n" + (abstract or "")
+    # Read plain text directly from a local .txt file at file_path.
 
-    vector_data = content_table.select(
-        data=pw.apply(_choose_text, pw.this.text, pw.this.title, pw.this.abstract),
+    # Only embed rows that actually provide a file_path
+    content_with_files = content_table.filter(pw.this.file_path != None)
+
+    vector_data = content_with_files.select(
+        # Use file_path (guaranteed .txt) as the embedding source; schema.text is ignored.
+        data=pw.apply(read_text_from_file, pw.this.file_path),
         metadata=pw.apply(
-            lambda paper_id, title, abstract, authors, published_date, url, pdf_url, primary, subcats, citations: {
+            lambda paper_id, title, abstract, authors, published_date, url, pdf_url, primary, subcats, citations, file_path: {
                 "id": paper_id,
                 "title": title,
                 "abstract": abstract,
@@ -60,7 +81,9 @@ def setup_dynamic_rag_pipeline(content_table: pw.Table[ContentSchema]):
                 "secondary_categories": subcats,
                 # also include the canonical sub_categories key
                 "sub_categories": subcats,
-                "citations": citations
+                "citations": citations,
+                # include file_path so optional full-text filtering can read it later
+                "file_path": file_path,
             },
             pw.this.paper_id,
             pw.this.title,
@@ -71,8 +94,44 @@ def setup_dynamic_rag_pipeline(content_table: pw.Table[ContentSchema]):
             pw.this.pdf_url,
             pw.this.primary_category,
             pw.this.sub_categories,
-            pw.this.citations
-        )
+            pw.this.citations,
+            pw.this.file_path,
+        ),
+        # Provide _metadata as well for compatibility with Pathway vector store filtering
+        _metadata=pw.apply(
+            lambda paper_id, title, abstract, authors, published_date, url, pdf_url, primary, subcats, citations, file_path: {
+                "id": paper_id,
+                "title": title,
+                "abstract": abstract,
+                "authors": authors,
+                "published_date": published_date,
+                "url": url,
+                "pdf_url": pdf_url,
+                "primary_category": primary,
+                "secondary_categories": subcats,
+                "sub_categories": subcats,
+                "citations": citations,
+                "file_path": file_path,
+            },
+            pw.this.paper_id,
+            pw.this.title,
+            pw.this.abstract,
+            pw.this.authors,
+            pw.this.published_date,
+            pw.this.url,
+            pw.this.pdf_url,
+            pw.this.primary_category,
+            pw.this.sub_categories,
+            pw.this.citations,
+            pw.this.file_path,
+        ),
+        # Convenience passthroughs for debugging snapshots (avoid JSON key access in engine)
+        doc_id=pw.this.paper_id,
+        title=pw.this.title,
+        abstract=pw.this.abstract,
+        authors=pw.this.authors,
+        primary_category=pw.this.primary_category,
+        url=pw.this.url,
     )
     
     # Set up embedder
@@ -100,39 +159,13 @@ def setup_dynamic_content_pipeline():
     os.makedirs("./query_stream", exist_ok=True)
     
     # Stream from files (auto-updates when files change)
-    try:
-        content_stream = pw.io.jsonlines.read(
-            "./content_stream/",
-            schema=ContentSchema,
-            mode="streaming",
-            autocommit_duration_ms=1000  # Update every 1 second
-        )
-    except:
-        # Fallback to debug table if streaming fails
-        sample_data = create_sample_data()
-        content_stream = pw.debug.table_from_rows(
-            schema=ContentSchema,
-            rows=[
-                (
-                    item.get("id") or item.get("paper_id"),
-                    item.get("title"),
-                    item.get("abstract"),
-                    item.get("authors"),
-                    item.get("published_date"),
-                    item.get("url"),
-                    item.get("pdf_url"),
-                    item.get("primary_category"),
-                    item.get("sub_categories") or item.get("secondary_categories"),
-                    item.get("journal_ref"),
-                    item.get("doi"),
-                    item.get("references"),
-                    item.get("text"),
-                    item.get("file_path") or item.get("file_url"),
-                    item.get("citations"),
-                )
-                for item in sample_data
-            ]
-        )
+    content_stream = pw.io.jsonlines.read(
+        "./content_stream/",
+        schema=ContentSchema,
+        mode="streaming",
+        autocommit_duration_ms=1000  # Update every 1 second
+    )
+    print("📥 Content: streaming from ./content_stream/ (JSONL)")
     
     return content_stream
 
@@ -142,25 +175,13 @@ def setup_dynamic_query_pipeline():
     Setup dynamic query processing - queries come in real-time from other team
     They provide query + keywords and expect results or "no results found"
     """
-    try:
-        query_stream = pw.io.jsonlines.read(
-            "./query_stream/",
-            schema=QuerySchema, 
-            mode="streaming",
-            autocommit_duration_ms=500  # Fast processing for real-time queries
-        )
-    except:
-        # Fallback to sample queries for testing
-        query_rows = [
-            {"query": "machine learning healthcare", "top_k": 3, "keywords": ["healthcare", "medical", "nlp"]},
-            {"query": "deep learning medical images", "top_k": 2, "keywords": ["deep learning", "medical", "image"]},
-            {"query": "robotics reinforcement learning", "top_k": 2, "keywords": ["robotics", "reinforcement", "control"]}
-        ]
-        
-        query_stream = pw.debug.table_from_rows(
-            schema=QuerySchema,
-            rows=[(row["query"], row["top_k"], row["keywords"]) for row in query_rows]
-        )
+    query_stream = pw.io.jsonlines.read(
+        "./query_stream/",
+        schema=QuerySchema, 
+        mode="streaming",
+        autocommit_duration_ms=500  # Fast processing for real-time queries
+    )
+    print("📨 Queries: streaming from ./query_stream/")
     
     return query_stream
 
@@ -206,6 +227,74 @@ def query_rag_pipeline(vector_store, query_table: pw.Table[QuerySchema]):
     return filtered_results
 
 
+def _extract_metadata_from_result(doc) -> dict:
+    """Extract metadata dict from a vector store retrieval result item.
+    Supports objects with `.doc.metadata`, `.metadata`, or dict-like structures.
+    """
+    try:
+        # Preferred: RetrievedDocument variants with nested document/doc
+        for attr in ("doc", "document"):
+            if hasattr(doc, attr):
+                inner = getattr(doc, attr)
+                for m_attr in ("metadata", "_metadata"):
+                    if hasattr(inner, m_attr):
+                        return getattr(inner, m_attr) or {}
+                if isinstance(inner, dict):
+                    if "metadata" in inner:
+                        return inner.get("metadata") or {}
+                    if "_metadata" in inner:
+                        return inner.get("_metadata") or {}
+        # Sometimes metadata is directly on the object
+        for m_attr in ("metadata", "_metadata"):
+            if hasattr(doc, m_attr):
+                return getattr(doc, m_attr) or {}
+        # Fallback: dict-like (handle {'doc'/'document': {...}, 'score': ...})
+        if isinstance(doc, dict):
+            if "metadata" in doc:
+                return doc.get("metadata") or {}
+            for attr in ("doc", "document"):
+                if attr in doc and isinstance(doc[attr], dict):
+                    inner = doc[attr]
+                    if "metadata" in inner and isinstance(inner["metadata"], (dict,)):
+                        return inner["metadata"] or {}
+                    if "_metadata" in inner and isinstance(inner["_metadata"], (dict,)):
+                        return inner["_metadata"] or {}
+            if "_metadata" in doc:
+                return doc.get("_metadata") or {}
+            return doc
+    except Exception:
+        pass
+    return {}
+
+
+def _extract_score_from_result(doc) -> float:
+    try:
+        if hasattr(doc, "score") and isinstance(getattr(doc, "score"), (int, float)):
+            return float(getattr(doc, "score"))
+        if isinstance(doc, dict) and "score" in doc:
+            val = doc.get("score")
+            return float(val) if isinstance(val, (int, float, str)) else 0.0
+    except Exception:
+        return 0.0
+    return 0.0
+
+
+def _read_file_text_if_enabled(metadata: dict) -> str:
+    """Optionally read full text for keyword search if env var enabled."""
+    if not metadata:
+        return ""
+    flag = os.getenv("RAG_FILTER_INCLUDE_TEXT", "0").lower() in {"1", "true", "yes"}
+    if not flag:
+        return ""
+    file_path = metadata.get("file_path")
+    if not file_path:
+        return ""
+    try:
+        return read_text_from_file(file_path)
+    except Exception:
+        return ""
+
+
 def filter_by_keywords(docs, keywords):
     """
     Filter documents based on keywords presence in metadata fields
@@ -219,16 +308,30 @@ def filter_by_keywords(docs, keywords):
     keywords_lower = [kw.lower() for kw in keywords]
     
     for doc in docs:
-        # Handle Json objects - metadata is likely stored as a dictionary within the Json object
-        if hasattr(doc, 'metadata'):
-            metadata = doc.metadata
-        else:
-            # If it's a Json object, the metadata might be the entire object or a nested field
-            # Try to access it as a dictionary
+        metadata = _extract_metadata_from_result(doc)
+
+        # Also extract the original embedded text if available from the retrieval result
+        def _extract_embedded_text(d) -> str:
             try:
-                metadata = dict(doc) if hasattr(doc, '__iter__') and not isinstance(doc, str) else {}
-            except:
-                metadata = {}
+                for attr in ("doc", "document"):
+                    if hasattr(d, attr):
+                        inner = getattr(d, attr)
+                        if hasattr(inner, "data") and isinstance(getattr(inner, "data"), str):
+                            return getattr(inner, "data")
+                        if isinstance(inner, dict) and isinstance(inner.get("data"), str):
+                            return inner.get("data")
+                if isinstance(d, dict) and "doc" in d and isinstance(d["doc"], dict):
+                    inner = d["doc"]
+                    if isinstance(inner.get("data"), str):
+                        return inner.get("data")
+                if isinstance(d, dict) and "document" in d and isinstance(d["document"], dict):
+                    inner = d["document"]
+                    if isinstance(inner.get("data"), str):
+                        return inner.get("data")
+            except Exception:
+                return ""
+            return ""
+        embedded_text = _extract_embedded_text(doc)
         
         # Create searchable text from multiple fields
         searchable_text = " ".join([
@@ -236,8 +339,11 @@ def filter_by_keywords(docs, keywords):
             str(metadata.get("abstract", "")),
             str(metadata.get("primary_category", "")),
             " ".join(metadata.get("secondary_categories", []) or metadata.get("sub_categories", []) or []),
-            " ".join(metadata.get("authors", []) or [])
+            " ".join(metadata.get("authors", []) or []),
+            embedded_text or "",
         ]).lower()
+        # Optionally include full document text
+        searchable_text = (searchable_text + " " + _read_file_text_if_enabled(metadata)).lower()
         
         # Check for keyword matches
         matched_keywords = [kw for kw in keywords_lower if kw in searchable_text]
@@ -245,45 +351,153 @@ def filter_by_keywords(docs, keywords):
         if matched_keywords:
             filtered_docs.append(format_document_with_keywords(doc, matched_keywords))
     
-    # If no documents match keywords, return empty list
+    # If no documents matched from retrieval results, fallback to cached vector data scan
+    if not filtered_docs:
+        try:
+            fallback = _fallback_match_from_cache(keywords_lower)
+            if fallback:
+                return fallback
+        except Exception:
+            pass
+    # If still no documents match keywords, return empty list
     # This signals to other team: "no results found" - they should search web
     return filtered_docs
 
 
-def format_document(doc):
-    """
-    Format a document for output
-    """
-    # Handle Json objects - metadata is likely stored as a dictionary within the Json object
-    if hasattr(doc, 'metadata'):
-        metadata = doc.metadata
-    else:
-        # If it's a Json object, the metadata might be the entire object or a nested field
-        # Try to access it as a dictionary
+# Simple on-disk cache to support fallback keyword matching when retrieval results lack metadata
+_VECTOR_CACHE_FILE = "./.vector_data_cache.jsonl"
+_VECTOR_CACHE: list[dict] | None = None
+
+def _load_vector_cache() -> list[dict]:
+    global _VECTOR_CACHE
+    if _VECTOR_CACHE is not None:
+        return _VECTOR_CACHE
+    items: list[dict] = []
+    if os.path.exists(_VECTOR_CACHE_FILE):
         try:
-            metadata = dict(doc) if hasattr(doc, '__iter__') and not isinstance(doc, str) else {}
-        except:
-            metadata = {}
-    
+            with open(_VECTOR_CACHE_FILE, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        items.append(json.loads(line))
+                    except Exception:
+                        continue
+        except Exception:
+            items = []
+    _VECTOR_CACHE = items
+    return _VECTOR_CACHE
+
+def _fallback_match_from_cache(keywords_lower: list[str]) -> list[dict]:
+    cache = _load_vector_cache()
+    if not cache:
+        return []
+    results: list[dict] = []
+    for item in cache:
+        try:
+            searchable = " ".join([
+                str(item.get("title", "")),
+                str(item.get("abstract", "")),
+                " ".join(item.get("authors", []) or []),
+                str(item.get("primary_category", "")),
+                str(item.get("data", "")),
+            ]).lower()
+            matched = [kw for kw in keywords_lower if kw in searchable]
+            if matched:
+                results.append({
+                    "id": item.get("doc_id", "unknown"),
+                    "title": item.get("title", ""),
+                    "abstract": item.get("abstract", ""),
+                    "authors": item.get("authors", []),
+                    "similarity_score": 0.0,
+                    "url": item.get("url", ""),
+                    "primary_category": item.get("primary_category", ""),
+                    "matched_keywords": matched,
+                })
+        except Exception:
+            continue
+    return results
+
+
+def format_document(doc):
+    """Format a document for output using extracted metadata and score."""
+    metadata = _extract_metadata_from_result(doc)
     return {
         "id": metadata.get("id", "unknown"),
         "title": metadata.get("title", ""),
         "abstract": metadata.get("abstract", ""),
         "authors": metadata.get("authors", []),
-        "similarity_score": getattr(doc, 'score', 0.0),
+        "similarity_score": _extract_score_from_result(doc),
         "url": metadata.get("url", ""),
         "primary_category": metadata.get("primary_category", ""),
-        "matched_keywords": []
+        "matched_keywords": [],
     }
 
 
 def format_document_with_keywords(doc, matched_keywords):
-    """
-    Format a document with matched keywords highlighted
-    """
+    """Format a document and attach matched keywords."""
     formatted = format_document(doc)
     formatted["matched_keywords"] = matched_keywords
     return formatted
+
+def pretty_print_results(original_query: str, results) -> str:
+    """
+    Nicely print results with similarity scores and matched keywords.
+    Returns a small status string so it can be used in a Pathway sink.
+    """
+    def _safe_get(obj, key, default=None):
+        try:
+            if isinstance(obj, dict):
+                return obj.get(key, default)
+            try:
+                return obj[key]
+            except Exception:
+                return default
+        except Exception:
+            return default
+
+    def _to_list(val):
+        try:
+            if isinstance(val, list):
+                return val
+            if val is None:
+                return []
+            if isinstance(val, tuple):
+                return list(val)
+            # Fallback: wrap non-iterables
+            if isinstance(val, (str, int, float)):
+                return [val]
+            return list(val)
+        except Exception:
+            return []
+
+    print("\n=== Query Results ===")
+    print(f"Query: {original_query}")
+
+    if not results:
+        print("No results found.")
+        return "printed_0"
+
+    for i, doc in enumerate(results, start=1):
+        title = _safe_get(doc, "title", "")
+        score = _safe_get(doc, "similarity_score", 0.0)
+        try:
+            score = float(score) if score is not None else 0.0
+        except Exception:
+            score = 0.0
+        matched = _to_list(_safe_get(doc, "matched_keywords", []))
+        doc_id = _safe_get(doc, "id", "")
+
+        print(f"{i}. {title} (score: {score:.3f})")
+        if matched:
+            try:
+                print(f"   matched: {', '.join([str(m) for m in matched])}")
+            except Exception:
+                print(f"   matched: {matched}")
+        print(f"   id: {doc_id}")
+
+    return f"printed_{len(results)}"
 
 
 def create_sample_data():
@@ -362,6 +576,136 @@ def create_rag_system():
     # Stream results to output (other team can monitor this)
     pw.io.jsonlines.write(results, "./query_results.jsonl")
     print("✅ Results will be written to ./query_results.jsonl")
+
+    # Debug: snapshot what is being embedded
+    def _len_or_zero(s: str) -> int:
+        try:
+            return len(s or "")
+        except Exception:
+            return 0
+    vector_snapshot = vector_data.select(
+        doc_id=pw.this.doc_id,
+        title=pw.this.title,
+        data_len=pw.apply(_len_or_zero, pw.this.data),
+    )
+    pw.io.jsonlines.write(vector_snapshot, "./.vector_data_snapshot.jsonl")
+
+    # Debug: write a simple cache with rich fields to support fallback keyword matching
+    vector_cache = vector_data.select(
+        doc_id=pw.this.doc_id,
+        title=pw.this.title,
+        abstract=pw.this.abstract,
+        authors=pw.this.authors,
+        primary_category=pw.this.primary_category,
+        url=pw.this.url,
+        data=pw.this.data,
+    )
+    pw.io.jsonlines.write(vector_cache, _VECTOR_CACHE_FILE)
+
+    # Debug: also materialize raw retrieve counts per query
+    def _count_docs(rs: list) -> int:
+        try:
+            return len(rs or [])
+        except Exception:
+            return 0
+
+    raw = vector_store.retrieve_query(
+        query_table.select(
+            query=pw.this.query,
+            k=pw.this.top_k,
+            metadata_filter=pw.cast(str | None, None),
+            filepath_globpattern=pw.cast(str | None, None),
+        )
+    ).join(query_table, pw.left.id == pw.right.id).select(
+        query=query_table.query,
+        count=pw.apply(_count_docs, pw.left.result),
+    )
+    pw.io.jsonlines.write(raw, "./.raw_retrieve_counts.jsonl")
+
+    # Debug: inspect metadata keys present in first document of each result set
+    def _first_doc_metadata_keys(rs: list) -> list[str]:
+        try:
+            if not rs:
+                return []
+            md = _extract_metadata_from_result(rs[0])
+            return sorted(list(md.keys()))
+        except Exception:
+            return []
+
+    raw_keys = vector_store.retrieve_query(
+        query_table.select(
+            query=pw.this.query,
+            k=pw.this.top_k,
+            metadata_filter=pw.cast(str | None, None),
+            filepath_globpattern=pw.cast(str | None, None),
+        )
+    ).join(query_table, pw.left.id == pw.right.id).select(
+        query=query_table.query,
+        keys=pw.apply(_first_doc_metadata_keys, pw.left.result),
+    )
+    pw.io.jsonlines.write(raw_keys, "./.raw_metadata_keys.jsonl")
+
+    # Debug: dump a compact shape of first raw doc per query
+    def _first_doc_shape(rs: list) -> dict:
+        try:
+            if not rs:
+                return {"empty": True}
+            d = rs[0]
+            out = {
+                "has_doc": hasattr(d, "doc"),
+                "has_document": hasattr(d, "document"),
+                "has_metadata": hasattr(d, "metadata"),
+                "is_dict": isinstance(d, dict),
+            }
+            if hasattr(d, "doc"):
+                inner = getattr(d, "doc")
+                out["doc_has_metadata"] = hasattr(inner, "metadata")
+                out["doc_has_data"] = hasattr(inner, "data")
+                if isinstance(inner, dict):
+                    out["doc_dict_keys"] = sorted(list(inner.keys()))
+            if hasattr(d, "document"):
+                inner2 = getattr(d, "document")
+                out["document_has_metadata"] = hasattr(inner2, "metadata")
+                out["document_has_data"] = hasattr(inner2, "data")
+                if isinstance(inner2, dict):
+                    out["document_dict_keys"] = sorted(list(inner2.keys()))
+            if isinstance(d, dict):
+                out["top_keys"] = sorted(list(d.keys()))
+            return out
+        except Exception:
+            return {"error": True}
+
+    raw_shape = vector_store.retrieve_query(
+        query_table.select(
+            query=pw.this.query,
+            k=pw.this.top_k,
+            metadata_filter=pw.cast(str | None, None),
+            filepath_globpattern=pw.cast(str | None, None),
+        )
+    ).join(query_table, pw.left.id == pw.right.id).select(
+        query=query_table.query,
+        shape=pw.apply(_first_doc_shape, pw.left.result),
+    )
+    pw.io.jsonlines.write(raw_shape, "./.raw_first_doc_shape.jsonl")
+
+    # Print incoming queries to console for verification
+    def _print_query(q: str, k: int, kws: list[str]) -> str:
+        print(f"➡️ Incoming query: '{q}' | top_k={k} | keywords={kws}")
+        return "seen"
+
+    query_printer = query_table.select(status=pw.apply(_print_query, pw.this.query, pw.this.top_k, pw.this.keywords))
+    pw.io.jsonlines.write(query_printer, "./.queries_seen.jsonl")
+
+    # Also print results and similarity matches to console
+    printer = results.select(
+        status=pw.apply(
+            lambda q, rs: pretty_print_results(q, rs),
+            pw.this.original_query,
+            pw.this.results,
+        )
+    )
+    # Materialize the printer so the side-effecting prints actually execute
+    pw.io.jsonlines.write(printer, "./.console_prints.jsonl")
     
     print("\n📋 Workflow Summary:")
     print("   1. Other team drops query.jsonl in ./query_stream/")
