@@ -1,4 +1,4 @@
-./scraping
-./parsing/asyncio
-./parsing/requests
+scraping/
+parsing/asyncio/
+parsing/requests/
 .env
