@@ -99,9 +99,9 @@ def create_rag_compatible_papers(all_papers_map):
     
     rag_papers = []
     for doc_id, paper_meta in all_papers_map.items():
-        # Convert to RAG format
+        # Convert to RAG format with correct field names (paper_id instead of id)
         rag_paper = {
-            "id": doc_id,
+            "paper_id": doc_id,  # RAG system expects paper_id, not id
             "title": paper_meta.get('title', ''),
             "abstract": paper_meta.get('abstract', ''),
             "authors": paper_meta.get('authors', []),
@@ -109,21 +109,24 @@ def create_rag_compatible_papers(all_papers_map):
             "url": paper_meta.get('url', ''),
             "pdf_url": paper_meta.get('pdf_url', paper_meta.get('url', '')),
             "primary_category": paper_meta.get('primary_category', 'unknown'),
-            "secondary_categories": paper_meta.get('sub_categories', []),
+            "sub_categories": paper_meta.get('sub_categories', []),
+            "journal_ref": None,  # Not available in current data
+            "doi": None,  # Not available in current data
+            "references": paper_meta.get('references', []),
             "text": paper_meta.get('abstract', ''),  # Use abstract as fallback text
-            "citations": paper_meta.get('references', [])
+            "file_path": None,  # Not available in current data
+            "citations": paper_meta.get('references', [])  # Use references as citations
         }
         rag_papers.append(rag_paper)
     
-    # Save to timestamped file for RAG system
-    timestamp = int(datetime.now().timestamp())
-    timestamped_file = f'./content_stream/papers_{timestamp}.jsonl'
+    # Only update the main enriched_papers.jsonl file (no timestamped files)
+    enriched_file = './content_stream/enriched_papers.jsonl'
     
-    with open(timestamped_file, 'w', encoding='utf-8') as f:
+    with open(enriched_file, 'w', encoding='utf-8') as f:
         for paper in rag_papers:
             f.write(json.dumps(paper) + '\n')
     
-    print(f"✅ Added {len(rag_papers)} papers to RAG content stream: {timestamped_file}")
+    print(f"✅ Updated {enriched_file} with {len(rag_papers)} papers (RAG-compatible format)")
     return rag_papers
 
 def main():
