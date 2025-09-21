@@ -21,7 +21,20 @@ class QuerySchema(pw.Schema):
     query: str
     top_k: int = 5
 
+class MainVectorSchema(pw.Schema):
+    id: str
+    title: str
+    hashed_title: str
+    primary_category: str
+    secondary_categories: list[str]
+    text: str
+    metadata: dict
 
+class IndexVectorSchema(pw.Schema):
+    id: str
+    hashed_title : str
+    primary_category: str
+    secondary_categories: list[str]
 
 def setup_dynamic_rag_pipeline(content_table: pw.Table[ContentSchema]):
     """
