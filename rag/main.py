@@ -502,6 +502,18 @@ def pretty_print_results(original_query: str, results) -> str:
     return f"printed_{len(results)}"
 
 
+def print_comprehensive_answer(query: str, answer: str) -> str:
+    """
+    Print the comprehensive answer to the console in a formatted way
+    """
+    print("\n" + "="*80)
+    print("COMPREHENSIVE RAG ANSWER")
+    print("="*80)
+    print(answer)
+    print("="*80 + "\n")
+    return "comprehensive_answer_printed"
+
+
 def print_final_summary(original_query: str, results) -> str:
     """Print a concise FINAL RAG RESULT for the top match, including file_path if available.
 
@@ -792,6 +804,30 @@ def create_rag_system():
     )
     pw.io.jsonlines.write(final_printer, "./.final_console_prints.jsonl")
     
+    # Generate comprehensive answers using the enhanced answer_query_with_context function
+    comprehensive_answers = results.select(
+        query=pw.this.original_query,
+        keywords=pw.this.keywords,
+        results=pw.this.results,
+        comprehensive_answer=pw.apply(
+            lambda q, rs, kws: answer_query_with_context(q, rs, kws),
+            pw.this.original_query,
+            pw.this.results,
+            pw.this.keywords,
+        )
+    )
+    pw.io.jsonlines.write(comprehensive_answers, "./comprehensive_answers.jsonl")
+    
+    # Print the comprehensive answer to console
+    answer_printer = comprehensive_answers.select(
+        status=pw.apply(
+            lambda q, answer: print_comprehensive_answer(q, answer),
+            pw.this.query,
+            pw.this.comprehensive_answer,
+        )
+    )
+    pw.io.jsonlines.write(answer_printer, "./.answer_prints.jsonl")
+    
     print("\n📋 Workflow Summary:")
     print("   1. Other team drops query.jsonl in ./query_stream/")
     print("   2. RAG processes query with keywords")
@@ -803,48 +839,194 @@ def create_rag_system():
     return vector_store, results
 
 
-def answer_query_with_context(query: str, search_results: list, max_context_length: int = 2000):
+def answer_query_with_context(query: str, search_results: list, keywords: list[str] | None = None, max_context_length: int = 4000):
     """
-    Generate a comprehensive answer based on retrieved documents
+    Generate a comprehensive answer based on retrieved documents, query, and keywords
+    This function intelligently synthesizes information from multiple sources to provide
+    a coherent and informative response to the user's query.
     """
     if not search_results:
-        return f"No relevant documents found for query: '{query}'"
+        if keywords:
+            return f"No relevant documents found for query: '{query}' with keywords: {', '.join(keywords)}. Consider broadening your search terms or searching external sources."
+        return f"No relevant documents found for query: '{query}'. Consider using different search terms or searching external sources."
     
-    # Build context from top results
-    context_parts = []
-    current_length = 0
+    # Extract key information from search results
+    all_matched_keywords = set()
+    primary_categories = set()
+    authors = set()
+    key_findings = []
+    document_summaries = []
     
-    for i, doc in enumerate(search_results[:3], 1):  # Top 3 results
-        context_part = f"""
-Document {i} (ID: {doc['id']}, Score: {doc['similarity_score']:.3f}):
-Title: {doc['title']}
-Abstract: {doc['abstract']}
-Matched Keywords: {', '.join(doc['matched_keywords'])}
----"""
+    # Process each document to extract relevant information
+    for i, doc in enumerate(search_results[:5], 1):  # Process top 5 results
+        # Collect metadata
+        matched_kws = doc.get('matched_keywords', [])
+        all_matched_keywords.update(matched_kws)
         
-        if current_length + len(context_part) <= max_context_length:
-            context_parts.append(context_part)
-            current_length += len(context_part)
+        category = doc.get('primary_category', 'Unknown')
+        primary_categories.add(category)
+        
+        doc_authors = doc.get('authors', [])
+        if isinstance(doc_authors, list):
+            authors.update(doc_authors[:2])  # Limit to first 2 authors per paper
+        
+        # Create document summary
+        title = doc.get('title', 'Untitled')
+        abstract = doc.get('abstract', 'No abstract available')
+        score = doc.get('similarity_score', 0.0)
+        
+        # Truncate abstract if too long
+        if len(abstract) > 300:
+            abstract = abstract[:297] + "..."
+        
+        doc_summary = f"""
+Document {i}: {title}
+Relevance Score: {score:.3f}
+Abstract: {abstract}
+Matched Terms: {', '.join(matched_kws) if matched_kws else 'None'}"""
+        
+        document_summaries.append(doc_summary)
+        
+        # Extract key findings from title and abstract for synthesis
+        key_findings.append({
+            'title': title,
+            'abstract': abstract,
+            'keywords': matched_kws,
+            'category': category
+        })
+    
+    # Generate comprehensive answer
+    answer_parts = []
+    
+    # Header
+    answer_parts.append(f"## Answer to: {query}\n")
+    
+    # Executive Summary
+    answer_parts.append("### Executive Summary")
+    if keywords:
+        answer_parts.append(f"Based on analysis of {len(search_results)} relevant documents related to your query about {query}, with focus on: {', '.join(keywords)}.\n")
+    else:
+        answer_parts.append(f"Based on analysis of {len(search_results)} relevant documents related to your query about {query}.\n")
+    
+    # Key Insights Section
+    answer_parts.append("### Key Insights")
+    
+    # Generate insights based on document analysis
+    if len(primary_categories) > 1:
+        answer_parts.append(f"This is an interdisciplinary topic spanning {', '.join(sorted(primary_categories))} domains.")
+    else:
+        answer_parts.append(f"This research primarily falls within the {list(primary_categories)[0]} domain.")
+    
+    # Synthesize key findings
+    if all_matched_keywords:
+        answer_parts.append(f"\nThe most relevant aspects identified include: {', '.join(sorted(all_matched_keywords))}.")
+    
+    # Add synthesized insights from abstracts
+    common_themes = _extract_common_themes(key_findings)
+    if common_themes:
+        answer_parts.append(f"\nCommon themes across the research include: {', '.join(common_themes)}.")
+    
+    # Notable researchers
+    if authors:
+        notable_authors = list(authors)[:5]  # Limit to 5 authors
+        answer_parts.append(f"\nNotable researchers in this area include: {', '.join(notable_authors)}.")
+    
+    # Document Details Section
+    answer_parts.append("\n### Supporting Documents")
+    
+    # Add document summaries with length control
+    current_length = len('\n'.join(answer_parts))
+    for doc_summary in document_summaries:
+        if current_length + len(doc_summary) <= max_context_length - 500:  # Leave space for conclusion
+            answer_parts.append(doc_summary)
+            current_length += len(doc_summary)
         else:
+            remaining_docs = len(document_summaries) - document_summaries.index(doc_summary)
+            answer_parts.append(f"\n... and {remaining_docs} additional relevant documents")
             break
     
-    context = "\n".join(context_parts)
+    # Conclusion
+    answer_parts.append("\n### Conclusion")
+    answer_parts.append(_generate_conclusion(query, key_findings, keywords))
     
-    # Generate answer
-    answer = f"""Based on the retrieved documents:
-
-{context}
-
-Query: {query}
-
-Summary: Based on {len(search_results)} relevant documents, here are the key findings related to your query. The most relevant documents cover topics in {', '.join(set(doc.get('primary_category', 'N/A') for doc in search_results[:3]))}.
-
-Key matched terms: {', '.join(set().union(*[doc.get('matched_keywords', []) for doc in search_results[:3]]))}
-
-For detailed information, please refer to the documents listed above.
-"""
+    # Recommendations for further research
+    answer_parts.append("\n### For Further Research")
+    answer_parts.append("Consider exploring the full text of the most relevant documents above, ")
+    answer_parts.append("particularly those with the highest relevance scores. ")
+    if keywords:
+        answer_parts.append(f"You may also want to search for related terms such as: {_suggest_related_keywords(keywords, all_matched_keywords)}.")
     
-    return answer
+    return '\n'.join(answer_parts)
+
+
+def _extract_common_themes(key_findings: list[dict]) -> list[str]:
+    """Extract common themes from document findings"""
+    themes = []
+    
+    # Simple keyword frequency analysis
+    word_freq = {}
+    for finding in key_findings:
+        # Analyze titles and abstracts for common important words
+        text = f"{finding['title']} {finding['abstract']}".lower()
+        words = text.split()
+        
+        # Filter for meaningful words (simple approach)
+        meaningful_words = [w for w in words if len(w) > 4 and w not in 
+                          ['paper', 'study', 'research', 'analysis', 'using', 'based', 'approach', 'method']]
+        
+        for word in meaningful_words:
+            word_freq[word] = word_freq.get(word, 0) + 1
+    
+    # Get most common themes (appear in multiple documents)
+    common_themes = [word for word, freq in word_freq.items() if freq > 1]
+    return common_themes[:5]  # Return top 5 themes
+
+
+def _generate_conclusion(query: str, key_findings: list[dict], keywords: list[str] | None = None) -> str:
+    """Generate a thoughtful conclusion based on the query and findings"""
+    conclusion_parts = []
+    
+    if len(key_findings) >= 3:
+        conclusion_parts.append("The retrieved documents provide substantial coverage of your query, ")
+        conclusion_parts.append("with multiple perspectives and research approaches represented. ")
+    elif len(key_findings) >= 1:
+        conclusion_parts.append("The available documents provide relevant insights into your query, ")
+        conclusion_parts.append("though additional sources may be beneficial for comprehensive understanding. ")
+    
+    # Analyze research recency and relevance
+    categories = set(f['category'] for f in key_findings)
+    if len(categories) > 1:
+        conclusion_parts.append("The interdisciplinary nature of this topic suggests ")
+        conclusion_parts.append("that comprehensive understanding may require expertise from multiple domains. ")
+    
+    if keywords:
+        conclusion_parts.append(f"The specific focus on {', '.join(keywords)} appears to be well-supported ")
+        conclusion_parts.append("by the current literature in this domain.")
+    
+    return ''.join(conclusion_parts)
+
+
+def _suggest_related_keywords(original_keywords: list[str], matched_keywords: set) -> str:
+    """Suggest related keywords for further exploration"""
+    # Create related keyword suggestions based on matched terms
+    suggestions = set()
+    
+    for keyword in original_keywords:
+        # Simple approach: suggest variations and related terms
+        if 'quantum' in keyword.lower():
+            suggestions.update(['quantum computing', 'quantum mechanics', 'quantum theory'])
+        elif 'neural' in keyword.lower() or 'neuron' in keyword.lower():
+            suggestions.update(['neural networks', 'neuroscience', 'brain'])
+        elif 'machine' in keyword.lower() or 'learning' in keyword.lower():
+            suggestions.update(['deep learning', 'AI', 'artificial intelligence'])
+    
+    # Add some matched keywords as suggestions
+    suggestions.update(list(matched_keywords)[:3])
+    
+    # Remove original keywords from suggestions
+    suggestions = suggestions - set(kw.lower() for kw in original_keywords)
+    
+    return ', '.join(list(suggestions)[:5])
 
 
 class DynamicRAGPipeline:
