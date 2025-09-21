@@ -17,7 +17,7 @@ model = genai.GenerativeModel('gemini-1.5-flash')
 # --- File I/O Configuration ---
 SOURCE_JSONL_FILE = 'arxiv_papers.jsonl'
 PAPERS_TEXT_DIR = 'papers_text'
-FINAL_OUTPUT_FILE = 'complete_papers_data.jsonl'
+FINAL_OUTPUT_FILE = 'content_stream/enriched_papers.jsonl'
 
 MAX_CHARS_PER_PAPER_FOR_API = 4000
 
