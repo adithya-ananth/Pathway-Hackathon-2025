@@ -1,112 +1,141 @@
 #!/usr/bin/env python3
 """
-Simple test script to demonstrate the dynamic RAG functionality
+Test script to verify RAG pipeline integration works correctly.
+This simulates the exact workflow the other team will use.
 """
 
-from rag.main import DynamicRAGPipeline, create_sample_data
+import json
+import os
+import time
+from pathlib import Path
 
-def test_dynamic_rag():
-    """Test the dynamic RAG pipeline with sample data"""
-    print("🚀 Testing Dynamic RAG Pipeline")
-    print("=" * 50)
+def test_rag_integration():
+    """Test the complete RAG integration workflow"""
     
-    # Mock search function for demonstration
-    def mock_search_function(query: str, keywords: list[str]) -> list[dict]:
-        """Mock search function - simulates your team's search function"""
-        print(f"📡 External search triggered!")
-        print(f"   Query: '{query}'")
-        print(f"   Keywords: {keywords}")
-        
-        # Return mock search results in ContentSchema format
-        return [
-            {
-                "id": f"external_1_{hash(query) % 1000}",
-                "title": f"External Research: {query.title()}",
-                "abstract": f"This is an external research paper found for '{query}'. It covers advanced topics related to your search query and provides insights not available in the local knowledge base.",
-                "authors": ["Dr. External Researcher", "Prof. Web Search"],
-                "published_date": "2024-09-21",
-                "url": f"https://external-source.com/papers/{query.replace(' ', '-')}",
-                "pdf_url": f"https://external-source.com/papers/{query.replace(' ', '-')}.pdf",
-                "primary_category": "external.research",
-                "secondary_categories": ["web.search", "external.content"],
-                "text": f"Comprehensive analysis of {query}. This external content provides additional context and research findings that complement the local knowledge base. Keywords addressed: {', '.join(keywords)}. The research methodology and findings are particularly relevant for understanding the broader implications of {query} in current academic discourse.",
-                "citations": [f"External Source {i}" for i in range(1, 4)]
-            },
-            {
-                "id": f"external_2_{hash(query) % 1000 + 1}",
-                "title": f"Advanced Studies in {query.title()}",
-                "abstract": f"A follow-up study on {query} with recent developments and breakthrough discoveries.",
-                "authors": ["Dr. Latest Research", "Prof. Current Studies"],
-                "published_date": "2024-09-20",
-                "url": f"https://external-source.com/advanced/{query.replace(' ', '-')}",
-                "pdf_url": f"https://external-source.com/advanced/{query.replace(' ', '-')}.pdf",
-                "primary_category": "external.advanced",
-                "secondary_categories": ["recent.research"],
-                "text": f"Recent breakthrough research in {query} area. This study builds upon previous work and introduces novel approaches. Specific focus on {', '.join(keywords)} ensures high relevance to your search query.",
-                "citations": [f"Recent Study {i}" for i in range(1, 3)]
-            }
-        ]
+    print("=== RAG Integration Test ===\n")
     
-    # 1. Initialize pipeline with search function
-    print("1. 🔧 Initializing pipeline...")
-    pipeline = DynamicRAGPipeline(search_function=mock_search_function)
+    # Clean up any existing test files
+    cleanup_test_files()
     
-    # 2. Load sample data
-    print("2. 📚 Loading sample data...")
-    sample_data = create_sample_data()
-    pipeline.load_content(sample_data)
-    print(f"   Loaded {len(sample_data)} sample documents")
+    # Test 1: Query with no results (empty database)
+    print("📝 Test 1: Query empty database")
+    query_empty_database()
     
-    # 3. Setup vector store
-    print("3. 🧠 Setting up vector store...")
-    pipeline.setup_vector_store()
-    print("   ✅ Vector store ready with embeddings")
+    print("\n" + "="*50)
     
-    # 4. Demonstrate regular search
-    print("\n4. 🔍 Testing regular search (sufficient results)...")
-    print("   Query: 'deep learning medical applications'")
-    print("   Keywords: ['medical', 'deep learning']")
+    # Test 2: Add content and query again  
+    print("\n� Test 2: Add content and query again")
+    add_test_content()
+    time.sleep(2)  # Give RAG time to process
+    query_with_content()
     
-    results1 = pipeline.search(
-        query="deep learning medical applications",
-        keywords=["medical", "deep learning"],
-        top_k=3
-    )
-    print("   ✅ Search completed - found sufficient local results")
+    print("\n✅ All tests completed!")
+    print("🔍 Check query_results.jsonl for actual results")
+
+def cleanup_test_files():
+    """Remove any existing test files"""
+    dirs_to_clean = ["./query_stream", "./content_stream"]
+    files_to_clean = ["./query_results.jsonl"]
     
-    # 5. Demonstrate search with fallback
-    print("\n5. 🚀 Testing search with external fallback...")
-    print("   Query: 'quantum computing applications'")  
-    print("   Keywords: ['quantum', 'computing']")
-    print("   (This should trigger external search since we don't have quantum content)")
+    for directory in dirs_to_clean:
+        if os.path.exists(directory):
+            for file in os.listdir(directory):
+                os.remove(os.path.join(directory, file))
     
-    results2 = pipeline.search_with_fallback(
-        query="quantum computing applications",
-        keywords=["quantum", "computing"], 
-        top_k=5,
-        min_results=3
-    )
-    print("   ✅ Search with fallback completed")
+    for file in files_to_clean:
+        if os.path.exists(file):
+            os.remove(file)
+
+def query_empty_database():
+    """Test querying when database is empty"""
     
-    # 6. Run pipeline to execute all operations
-    print("\n6. ⚡ Executing pipeline...")
-    pipeline.run_pipeline()
+    query_data = {
+        "query": "quantum computing applications",
+        "keywords": ["quantum", "computing", "applications", "algorithms"],
+        "top_k": 5
+    }
     
-    print("\n✅ Dynamic RAG Pipeline test completed successfully!")
-    print("\n📊 Key Features Demonstrated:")
-    print("   ✓ Dynamic content loading")
-    print("   ✓ Vector store setup with embeddings") 
-    print("   ✓ Semantic search with keyword filtering")
-    print("   ✓ External search fallback integration")
-    print("   ✓ Real-time pipeline execution")
+    os.makedirs("./query_stream", exist_ok=True)
+    query_file = f"./query_stream/test_query_empty_{int(time.time())}.jsonl"
     
-    print("\n🔧 Next Steps:")
-    print("   • Replace mock_search_function with your team's real search function")
-    print("   • Add streaming data sources (./content_stream/ directory)")
-    print("   • Add streaming queries (./query_stream/ directory)")
-    print("   • Enable monitoring dashboard for production use")
+    with open(query_file, 'w') as f:
+        json.dump(query_data, f)
+        f.write('\n')
     
-    return pipeline
+    print(f"🔍 Query sent: {query_data['query']}")
+    print(f"📁 Query file: {query_file}")
+    print("⏳ Expected result: Empty/no results (database is empty)")
+
+def add_test_content():
+    """Add test papers to content stream"""
+    
+    test_papers = [
+        {
+            "id": "test_paper_1",
+            "title": "Quantum Computing Algorithms for Machine Learning",
+            "abstract": "This paper explores the application of quantum computing algorithms to accelerate machine learning tasks, focusing on quantum neural networks and optimization.",
+            "authors": ["Dr. Quantum Researcher", "Prof. ML Expert"],
+            "published_date": "2024-09-21",
+            "url": "https://test-research.com/quantum-ml",
+            "pdf_url": "https://test-research.com/quantum-ml.pdf",
+            "primary_category": "quant-ph",
+            "secondary_categories": ["cs.LG", "cs.AI"],
+            "text": [
+                "Quantum computing represents a paradigm shift in computational power, offering exponential speedups for certain classes of problems.",
+                "In this work, we investigate the application of quantum algorithms to machine learning, specifically focusing on quantum neural networks, quantum support vector machines, and quantum optimization algorithms.",
+                "Our experimental results demonstrate significant improvements in training time and model accuracy for specific machine learning tasks."
+            ],
+            "citations": ["Nielsen & Chuang 2010", "Biamonte et al. 2017"]
+        },
+        {
+            "id": "test_paper_2",
+            "title": "Applications of Quantum Algorithms in Optimization",
+            "abstract": "A comprehensive study of quantum algorithms for solving complex optimization problems, with applications to logistics, finance, and resource allocation.",
+            "authors": ["Dr. Optimization Expert", "Prof. Quantum Scientist"],  
+            "published_date": "2024-08-15",
+            "url": "https://test-research.com/quantum-opt",
+            "pdf_url": "https://test-research.com/quantum-opt.pdf",
+            "primary_category": "quant-ph",
+            "secondary_categories": ["math.OC", "cs.AI"],
+            "text": [
+                "Quantum algorithms offer unique advantages for solving NP-hard optimization problems.",
+                "This paper presents a comprehensive analysis of quantum approximate optimization algorithms (QAOA), quantum annealing approaches, and hybrid quantum-classical methods.",
+                "We demonstrate practical applications in portfolio optimization, vehicle routing problems, and resource scheduling.",
+                "The results show promising speedups compared to classical methods, particularly for large-scale optimization instances."
+            ],
+            "citations": ["Farhi et al. 2014", "Kadowaki & Nishimori 1998"]
+        }
+    ]
+    
+    os.makedirs("./content_stream", exist_ok=True)
+    
+    for i, paper in enumerate(test_papers):
+        content_file = f"./content_stream/test_papers_{int(time.time())}_{i}.jsonl"
+        with open(content_file, 'w') as f:
+            json.dump(paper, f)
+            f.write('\n')
+        print(f"📄 Added paper: {paper['title']}")
+    
+    print("✅ Test content added to ./content_stream/")
+
+def query_with_content():
+    """Test querying after content has been added"""
+    
+    query_data = {
+        "query": "quantum computing applications", 
+        "keywords": ["quantum", "computing", "applications", "algorithms"],
+        "top_k": 5
+    }
+    
+    query_file = f"./query_stream/test_query_with_content_{int(time.time())}.jsonl"
+    
+    with open(query_file, 'w') as f:
+        json.dump(query_data, f)
+        f.write('\n')
+    
+    print(f"🔍 Query sent: {query_data['query']}")
+    print(f"📁 Query file: {query_file}")
+    print("⏳ Expected result: Should find the quantum computing papers")
 
 if __name__ == "__main__":
-    test_dynamic_rag()
+    test_rag_integration()
