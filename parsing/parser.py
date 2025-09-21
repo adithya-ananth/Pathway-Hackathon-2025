@@ -387,7 +387,7 @@ parser = DoclingParser()
 async def main():
     results = await parser.parse(pdf_bytes)
     for text, meta in results:
-        with open(pdf_id+"_Text.txt", "a") as f:
+        with open("text_files/"+pdf_id+"_Text.txt", "a") as f:
             f.write(text.strip())
 
         # print(meta.keys())
