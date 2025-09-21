@@ -14,30 +14,35 @@ if not API_KEY:
 genai.configure(api_key=API_KEY)
 model = genai.GenerativeModel('gemini-1.5-flash')
 
-# --- File I/O Configuration (The only files you need to worry about) ---
+# --- File I/O Configuration ---
 SOURCE_JSONL_FILE = 'arxiv_papers.jsonl'
 PAPERS_TEXT_DIR = 'papers_text'
-FINAL_OUTPUT_FILE = 'complete_papers_data.json'
+# --- MODIFIED: Output file now has a .jsonl extension ---
+FINAL_OUTPUT_FILE = 'complete_papers_data.jsonl'
 
-MAX_CHARS_PER_PAPER_FOR_API = 4000 # Use abstract/snippet for API call for efficiency
+MAX_CHARS_PER_PAPER_FOR_API = 4000
 
 def extract_references(full_text_content):
     """
-    Extracts the list of references from the full text of a paper.
+    Extracts the list of references from the full text of a paper using a more
+    robust, multi-step parsing strategy.
     """
-    match = re.search(r'\n(References|REFERENCES|Bibliography)\n', full_text_content)
+    match = re.search(r'^\s*(references|bibliography)\s*$', full_text_content, re.IGNORECASE | re.MULTILINE)
+
     if not match:
         return []
 
-    references_section = full_text_content[match.end():]
-    references_list = re.split(r'\n(?=\[\d{1,2}\]|[^a-z\s]{5,})', references_section)
-    
+    references_section = full_text_content[match.end():].strip()
+    references = re.split(r'\n\s*\n', references_section)
+
     cleaned_references = []
-    for ref in references_list:
-        ref = ref.strip().replace('\n', ' ')
-        if len(ref) > 20: # Filter out short, likely incorrect entries
-            cleaned_references.append(ref)
+    for ref in references:
+        cleaned_ref = re.sub(r'\s*\n\s*', ' ', ref).strip()
+        if len(cleaned_ref) > 25:
+            cleaned_references.append(cleaned_ref)
+
     return cleaned_references
+
 
 def build_prompt(papers_data):
     """Constructs the single, comprehensive prompt for the Gemini API."""
@@ -66,13 +71,12 @@ def build_prompt(papers_data):
 
 def main():
     """
-    Main workflow: Reads source data, enriches it with references and AI-generated 
-    sub-categories, and saves a final, complete dataset.
+    Main workflow: Reads source data, enriches it with references and AI-generated
+    sub-categories, and saves a final, complete dataset in JSONL format.
     """
     print("🚀 Starting the paper enrichment pipeline...")
 
     # 1. Read the source metadata from the JSONL file.
-    # This is a critical step. Ensure your .jsonl file has one valid JSON object per line.
     if not os.path.exists(SOURCE_JSONL_FILE):
         print(f"❌ FATAL ERROR: Source file not found at '{SOURCE_JSONL_FILE}'")
         return
@@ -84,16 +88,12 @@ def main():
                 if not line.strip(): continue
                 paper_data = json.loads(line)
                 all_papers_map[paper_data['doc_id']] = paper_data
-    except json.JSONDecodeError as e:
-        print(f"❌ FATAL ERROR: Your '{SOURCE_JSONL_FILE}' has a formatting error on line {i+1}.")
-        print(f"   Please ensure each line is a single, complete JSON object. Details: {e}")
-        return
-    except KeyError:
-        print(f"❌ FATAL ERROR: A line in '{SOURCE_JSONL_FILE}' is missing the required 'doc_id' key.")
+    except Exception as e:
+        print(f"❌ FATAL ERROR reading or parsing '{SOURCE_JSONL_FILE}' on line {i+1}. Details: {e}")
         return
 
     if not all_papers_map:
-        print("⚠️ Warning: No papers were loaded. Is the source file empty or malformed?")
+        print("⚠️ Warning: No papers were loaded.")
         return
     print(f"✅ Loaded metadata for {len(all_papers_map)} papers from '{SOURCE_JSONL_FILE}'.")
 
@@ -105,11 +105,7 @@ def main():
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 content = f.read()
-            
-            # Add references and content to our main data map
             all_papers_map[doc_id]['references'] = extract_references(content)
-            
-            # Prepare a snippet for the API call
             papers_to_process_for_api.append({
                 "doc_id": doc_id,
                 "primary_category": paper_meta.get('primary_category', 'N/A'),
@@ -123,7 +119,7 @@ def main():
     if not papers_to_process_for_api:
         print("❌ No text files were found to process. Cannot call API.")
         return
-        
+
     final_prompt = build_prompt(papers_to_process_for_api)
     print(f"🤖 Sending request for {len(papers_to_process_for_api)} papers to Gemini API...")
     try:
@@ -138,10 +134,12 @@ def main():
             if doc_id in all_papers_map:
                 all_papers_map[doc_id]['sub_categories'] = sub_categories
 
-        # 5. Save the final, complete dataset
+        # 5. --- MODIFIED: Save the final, complete dataset as a JSONL file ---
         final_dataset = list(all_papers_map.values())
-        with open(FINAL_OUTPUT_FILE, 'w') as f:
-            json.dump(final_dataset, f, indent=2)
+        with open(FINAL_OUTPUT_FILE, 'w', encoding='utf-8') as f:
+            for paper_record in final_dataset:
+                # Convert each paper's dictionary to a JSON string and write it as a new line
+                f.write(json.dumps(paper_record) + '\n')
 
         print(f"\n📄🎉 Success! Final, comprehensive dataset created at '{FINAL_OUTPUT_FILE}'.")
 
