@@ -1,12 +1,9 @@
 import pathway as pw
-import pathway as pw
 from pathway.xpacks.llm import embedders
 from pathway.xpacks.llm.vector_store import VectorStoreServer
 import os
 import json
 import time
-import json
-import os
 
 class ContentSchema(pw.Schema):
     # Match content_stream/complete_papers_data.jsonl exactly
@@ -38,14 +35,22 @@ def setup_dynamic_rag_pipeline(content_table: pw.Table[ContentSchema]):
     """
     
     # Transform the content table to prepare data for vector store
-    # The 'text' field will be embedded, everything else stored as metadata
-    def _choose_text(text, title, abstract):
-        if text:
-            return text
-        return (title or "") + "\n\n" + (abstract or "")
+    # Read plain text directly from a local .txt file at file_path.
+    def _read_text_from_file(file_path: str) -> str:
+        # Support relative paths like "papers_text/ab.txt".
+        # Resolve relative to the project root (parent of this file's folder).
+        if file_path is None:
+            raise ValueError("file_path is None; expected a relative or absolute path to a .txt file")
+
+        base_dir = os.path.dirname(os.path.dirname(__file__))
+        resolved_path = file_path if os.path.isabs(file_path) else os.path.join(base_dir, file_path)
+
+        with open(resolved_path, "r", encoding="utf-8") as f:
+            return f.read()
 
     vector_data = content_table.select(
-        data=pw.apply(_choose_text, pw.this.text, pw.this.title, pw.this.abstract),
+        # Use file_path (guaranteed .txt) as the embedding source; schema.text is ignored.
+        data=pw.apply(_read_text_from_file, pw.this.file_path),
         metadata=pw.apply(
             lambda paper_id, title, abstract, authors, published_date, url, pdf_url, primary, subcats, citations: {
                 "id": paper_id,
