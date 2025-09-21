@@ -52,9 +52,22 @@ if __name__ == "__main__":
     # You can change the input prompt here
     input_prompt = input("Enter a research paper query prompt: ")
     config_filename = "config.json"
+    query_stream_dir = "query_stream"
+    query_filename = "input_query.jsonl"
 
     print(f"▶️  Generating keywords from prompt: \"{input_prompt}\"")
     extracted_keywords = extract_keywords_from_prompt(input_prompt)
+
+    # If keyword extraction fails, create fallback keywords from the prompt
+    if not extracted_keywords:
+        print("⚠️  API extraction failed, creating fallback keywords from prompt...")
+        # Simple keyword extraction as fallback
+        words = input_prompt.lower().split()
+        # Remove common words and keep meaningful terms
+        stop_words = {'tell', 'me', 'about', 'on', 'in', 'the', 'of', 'and', 'or', 'for', 'with', 'to', 'a', 'an'}
+        extracted_keywords = [word.title() for word in words if word not in stop_words and len(word) > 2]
+        if not extracted_keywords:
+            extracted_keywords = [input_prompt.title()]  # Use whole prompt as keyword if nothing else works
 
     if extracted_keywords:
         # Create a dictionary to store the keywords in a structured way
@@ -65,6 +78,26 @@ if __name__ == "__main__":
             json.dump(config_data, f, indent=4)
         
         print(f"✅  Successfully extracted keywords and saved them to '{config_filename}'.")
+        print(f"   Keywords: {extracted_keywords}")
+        
+        # Create query_stream directory if it doesn't exist
+        os.makedirs(query_stream_dir, exist_ok=True)
+        
+        # Create query for RAG system
+        query_data = {
+            "query": input_prompt,
+            "top_k": 5,
+            "keywords": extracted_keywords
+        }
+        
+        query_filepath = os.path.join(query_stream_dir, query_filename)
+        with open(query_filepath, 'w', encoding='utf-8') as f:
+            json.dump(query_data, f)
+            f.write('\n')  # Add newline for JSONL format
+        
+        print(f"✅  Created query file '{query_filepath}' for RAG system.")
+        print(f"   Query: \"{input_prompt}\"")
+        print(f"   Top K: 5")
         print(f"   Keywords: {extracted_keywords}")
     else:
         print("❌  Could not extract any keywords. The config file was not created.")
