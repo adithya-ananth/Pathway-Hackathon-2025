@@ -67,23 +67,26 @@ def setup_dynamic_rag_pipeline(content_table: pw.Table[ContentSchema]):
     vector_data = content_with_files.select(
         # Use file_path (guaranteed .txt) as the embedding source; schema.text is ignored.
         data=pw.apply(read_text_from_file, pw.this.file_path),
+        # CRITICAL FIX: Ensure metadata is structured correctly for VectorStore
         metadata=pw.apply(
             lambda paper_id, title, abstract, authors, published_date, url, pdf_url, primary, subcats, citations, file_path: {
-                "id": paper_id,
-                "title": title,
-                "abstract": abstract,
-                "authors": authors,
-                "published_date": published_date,
-                "url": url,
-                "pdf_url": pdf_url,
-                "primary_category": primary,
+                "id": str(paper_id or "unknown"),
+                "title": str(title or ""),
+                "abstract": str(abstract or ""),
+                "authors": list(authors or []),
+                "published_date": str(published_date or ""),
+                "url": str(url or ""),
+                "pdf_url": str(pdf_url or ""),
+                "primary_category": str(primary or ""),
                 # compatible key name for any downstream references
-                "secondary_categories": subcats,
+                "secondary_categories": list(subcats or []),
                 # also include the canonical sub_categories key
-                "sub_categories": subcats,
-                "citations": citations,
+                "sub_categories": list(subcats or []),
+                "citations": list(citations or []),
                 # include file_path so optional full-text filtering can read it later
-                "file_path": file_path,
+                "file_path": str(file_path or ""),
+                # IMPORTANT: Initialize similarity_score to 0.0 - VectorStore should update this
+                "similarity_score": 0.0,
             },
             pw.this.paper_id,
             pw.this.title,
@@ -188,7 +191,8 @@ def setup_dynamic_query_pipeline():
 
 def query_rag_pipeline(vector_store, query_table: pw.Table[QuerySchema]):
     """
-    Query the RAG pipeline with keyword-based filtering and return formatted results
+    Query the RAG pipeline with keyword-based filtering and return formatted results.
+    Enhanced to preserve similarity scores from VectorStore.
     """
     
     # For now, let's just use the original query without combining keywords in the query
@@ -203,79 +207,176 @@ def query_rag_pipeline(vector_store, query_table: pw.Table[QuerySchema]):
     # Perform the retrieval
     results = vector_store.retrieve_query(simple_query_table)
     
+    # CRITICAL: Let's debug what the vector store is actually returning
+    def _debug_and_process_results(query_results, original_query, keywords):
+        """Debug the results structure and process them correctly"""
+        print(f"🔧 DEBUG: Processing results for query: {original_query}")
+        print(f"🔧 DEBUG: Results type: {type(query_results)}")
+        
+        if hasattr(query_results, '__len__'):
+            try:
+                print(f"🔧 DEBUG: Results length: {len(query_results)}")
+            except:
+                pass
+        
+        # Process results and ensure they have similarity scores
+        processed_results = []
+        
+        if isinstance(query_results, list):
+            for i, doc in enumerate(query_results):
+                print(f"🔧 DEBUG: Document {i} type: {type(doc)}")
+                if hasattr(doc, '__dict__'):
+                    print(f"🔧 DEBUG: Document {i} attributes: {list(doc.__dict__.keys()) if hasattr(doc, '__dict__') else 'N/A'}")
+                
+                # Try to extract similarity score before applying filters
+                formatted_doc = format_document(doc)
+                
+                # Apply keyword filtering
+                if keywords:
+                    if _document_matches_keywords(formatted_doc, keywords):
+                        processed_results.append(formatted_doc)
+                else:
+                    processed_results.append(formatted_doc)
+        else:
+            # Handle single document or other formats
+            formatted_doc = format_document(query_results)
+            processed_results.append(formatted_doc)
+        
+        return processed_results
+    
     # Add back the original query info and keywords for post-processing
     enriched_results = results.join(
         query_table, 
         results.id == query_table.id
     ).select(
-        result=results.result,
         original_query=query_table.query,
-        keywords=query_table.keywords
-    )
-    
-    # Filter results based on keywords
-    filtered_results = enriched_results.select(
-        original_query=pw.this.original_query,
-        keywords=pw.this.keywords,
+        keywords=query_table.keywords,
         results=pw.apply(
-            lambda docs, keywords: filter_by_keywords(docs, keywords),
-            pw.this.result,
-            pw.this.keywords
+            _debug_and_process_results,
+            results.result,
+            query_table.query,
+            query_table.keywords
         )
     )
     
-    return filtered_results
+    return enriched_results
+
+
+def _document_matches_keywords(formatted_doc: dict, keywords: list[str]) -> bool:
+    """Check if a formatted document matches the given keywords"""
+    keywords_lower = [kw.lower() for kw in keywords]
+    
+    # Create searchable text from multiple fields
+    searchable_text = " ".join([
+        str(formatted_doc.get("title", "")),
+        str(formatted_doc.get("abstract", "")),
+        str(formatted_doc.get("primary_category", "")),
+        " ".join(formatted_doc.get("authors", []) or []),
+    ]).lower()
+    
+    # Check for keyword matches
+    matched_keywords = [kw for kw in keywords_lower if kw in searchable_text]
+    
+    if matched_keywords:
+        # Add matched keywords to the document
+        formatted_doc["matched_keywords"] = matched_keywords
+        return True
+    
+    return False
 
 
 def _extract_metadata_from_result(doc) -> dict:
     """Extract metadata dict from a vector store retrieval result item.
-    Supports objects with `.doc.metadata`, `.metadata`, or dict-like structures.
+    Pathway VectorStore returns results as pathway.internals.json.Json objects with .value containing the data.
     """
     try:
-        # Preferred: RetrievedDocument variants with nested document/doc
-        for attr in ("doc", "document"):
-            if hasattr(doc, attr):
-                inner = getattr(doc, attr)
-                for m_attr in ("metadata", "_metadata"):
-                    if hasattr(inner, m_attr):
-                        return getattr(inner, m_attr) or {}
-                if isinstance(inner, dict):
-                    if "metadata" in inner:
-                        return inner.get("metadata") or {}
-                    if "_metadata" in inner:
-                        return inner.get("_metadata") or {}
-        # Sometimes metadata is directly on the object
-        for m_attr in ("metadata", "_metadata"):
-            if hasattr(doc, m_attr):
-                return getattr(doc, m_attr) or {}
-        # Fallback: dict-like (handle {'doc'/'document': {...}, 'score': ...})
+        # Handle Pathway Json objects - the actual data is in .value
+        if hasattr(doc, 'value'):
+            doc_data = getattr(doc, 'value')
+            if isinstance(doc_data, dict):
+                print(f"🔧 DEBUG: Found document data in .value: {list(doc_data.keys())}")
+                return doc_data
+        
+        # Fallback patterns for other formats
+        if hasattr(doc, 'metadata') and doc.metadata is not None:
+            if isinstance(doc.metadata, dict):
+                return doc.metadata
+            elif hasattr(doc.metadata, '__dict__'):
+                return doc.metadata.__dict__
+        
+        # Check if doc itself has the metadata fields directly
+        if hasattr(doc, 'id') or hasattr(doc, 'title'):
+            metadata = {}
+            for field in ['id', 'title', 'abstract', 'authors', 'similarity_score', 'url', 
+                         'primary_category', 'file_path', 'secondary_categories', 'sub_categories']:
+                if hasattr(doc, field):
+                    val = getattr(doc, field)
+                    metadata[field] = val
+            if metadata:
+                return metadata
+        
+        # Dict-like access
         if isinstance(doc, dict):
-            if "metadata" in doc:
-                return doc.get("metadata") or {}
-            for attr in ("doc", "document"):
-                if attr in doc and isinstance(doc[attr], dict):
-                    inner = doc[attr]
-                    if "metadata" in inner and isinstance(inner["metadata"], (dict,)):
-                        return inner["metadata"] or {}
-                    if "_metadata" in inner and isinstance(inner["_metadata"], (dict,)):
-                        return inner["_metadata"] or {}
-            if "_metadata" in doc:
-                return doc.get("_metadata") or {}
             return doc
-    except Exception:
-        pass
+            
+    except Exception as e:
+        print(f"🔧 ERROR: Error extracting metadata from {type(doc)}: {e}")
+        import traceback
+        traceback.print_exc()
+    
+    print(f"🔧 WARNING: Could not extract metadata from {type(doc)}")
     return {}
 
 
 def _extract_score_from_result(doc) -> float:
+    """Extract similarity score from a vector store retrieval result item.
+    Pathway VectorStore returns results as pathway.internals.json.Json objects with .value containing the data.
+    """
     try:
-        if hasattr(doc, "score") and isinstance(getattr(doc, "score"), (int, float)):
-            return float(getattr(doc, "score"))
-        if isinstance(doc, dict) and "score" in doc:
-            val = doc.get("score")
-            return float(val) if isinstance(val, (int, float, str)) else 0.0
-    except Exception:
-        return 0.0
+        # Handle Pathway Json objects - the actual data is in .value
+        if hasattr(doc, 'value'):
+            doc_data = getattr(doc, 'value')
+            if isinstance(doc_data, dict):
+                print(f"🔧 DEBUG: Searching for score in document data keys: {list(doc_data.keys())}")
+                
+                # Look for score-related fields in the document data
+                for score_key in ['similarity_score', 'score', 'relevance_score', 'dist', 'distance']:
+                    if score_key in doc_data and doc_data[score_key] is not None:
+                        score = doc_data[score_key]
+                        print(f"🔧 DEBUG: Found {score_key} = {score}")
+                        
+                        # Handle distance (convert to similarity)
+                        if score_key in ['dist', 'distance']:
+                            return max(0.0, 1.0 - float(score))
+                        else:
+                            return float(score)
+        
+        # Fallback: check for direct score attributes on the doc object
+        score_attrs = ['similarity_score', 'score', 'relevance_score', 'distance']
+        for attr_name in score_attrs:
+            if hasattr(doc, attr_name):
+                val = getattr(doc, attr_name)
+                print(f"🔧 DEBUG: Found {attr_name}: {val} (type: {type(val)})")
+                if hasattr(val, 'value'):
+                    score = getattr(val, 'value')
+                    return float(score) if score is not None else 0.0
+                elif val is not None:
+                    return float(val)
+        
+        # Dict-like access for other document formats
+        if isinstance(doc, dict):
+            for score_key in score_attrs:
+                if score_key in doc and doc[score_key] is not None:
+                    return float(doc[score_key])
+        
+    except (ValueError, TypeError) as e:
+        print(f"🔧 WARNING: Error converting score to float: {e}")
+    except Exception as e:
+        print(f"🔧 ERROR: Error extracting score: {e}")
+        import traceback
+        traceback.print_exc()
+    
+    print(f"🔧 WARNING: Returning default score 0.0 for {type(doc)}")
     return 0.0
 
 
@@ -421,20 +522,47 @@ def _fallback_match_from_cache(keywords_lower: list[str]) -> list[dict]:
 
 
 def format_document(doc):
-    """Format a document for output using extracted metadata and score."""
+    """Format a document for output using extracted metadata and score.
+    Enhanced to handle Pathway VectorStore format specifically."""
+    
+    # Try to extract metadata first - this is the key function that needs to work
     metadata = _extract_metadata_from_result(doc)
-    return {
-        "id": metadata.get("id", "unknown"),
+    
+    # Debug: Print the actual document structure once for troubleshooting
+    if not hasattr(format_document, '_debug_printed'):
+        format_document._debug_printed = True
+        print(f"🔧 DEBUG: Document type: {type(doc)}")
+        print(f"🔧 DEBUG: Document attributes: {dir(doc) if hasattr(doc, '__dict__') else 'N/A'}")
+        if hasattr(doc, '__dict__'):
+            print(f"🔧 DEBUG: Document dict: {doc.__dict__}")
+        print(f"🔧 DEBUG: Extracted metadata: {metadata}")
+    
+    # Extract score - also debug this
+    score = _extract_score_from_result(doc)
+    
+    # Build the formatted document with fallbacks
+    formatted = {
+        "id": metadata.get("id") or metadata.get("paper_id") or metadata.get("doc_id") or "unknown",
         "title": metadata.get("title", ""),
         "abstract": metadata.get("abstract", ""),
         "authors": metadata.get("authors", []),
-        "similarity_score": _extract_score_from_result(doc),
+        "similarity_score": score,
         "url": metadata.get("url", ""),
         "primary_category": metadata.get("primary_category", ""),
         # include file_path so downstream printing can surface where text came from
         "file_path": metadata.get("file_path", None),
         "matched_keywords": [],
     }
+    
+    # If we couldn't extract basic fields from metadata, try direct access
+    if formatted["id"] == "unknown" and hasattr(doc, 'paper_id'):
+        formatted["id"] = str(getattr(doc, 'paper_id', 'unknown'))
+    if not formatted["title"] and hasattr(doc, 'title'):
+        formatted["title"] = str(getattr(doc, 'title', ''))
+    if not formatted["abstract"] and hasattr(doc, 'abstract'):
+        formatted["abstract"] = str(getattr(doc, 'abstract', ''))
+    
+    return formatted
 
 
 def format_document_with_keywords(doc, matched_keywords):
@@ -1025,73 +1153,113 @@ Matched Terms: {', '.join(str(kw) for kw in matched_kws) if matched_kws else 'No
 
 
 def _extract_common_themes(key_findings: list[dict]) -> list[str]:
-    """Extract common themes from document findings"""
+    """Extract common themes from document findings with improved specificity"""
     themes = []
     
-    # Simple keyword frequency analysis
+    # Simple keyword frequency analysis with better filtering
     word_freq = {}
     for finding in key_findings:
         # Analyze titles and abstracts for common important words
         text = f"{finding['title']} {finding['abstract']}".lower()
-        words = text.split()
+        # Clean up the text - split on various delimiters
+        import re
+        words = re.findall(r'\b[a-z]{3,}\b', text)  # Words with 3+ letters
         
-        # Filter for meaningful words (simple approach)
-        meaningful_words = [w for w in words if len(w) > 4 and w not in 
-                          ['paper', 'study', 'research', 'analysis', 'using', 'based', 'approach', 'method']]
+        # Filter for meaningful words - exclude common research terms
+        stopwords = {
+            'paper', 'study', 'research', 'analysis', 'using', 'based', 'approach', 'method',
+            'results', 'shows', 'demonstrate', 'present', 'propose', 'novel', 'new',
+            'this', 'that', 'with', 'for', 'and', 'the', 'are', 'can', 'our',
+            'model', 'models', 'data', 'system', 'systems', 'framework', 'algorithms',
+            'performance', 'evaluation', 'experiments', 'experimental', 'techniques'
+        }
+        meaningful_words = [w for w in words if len(w) > 3 and w not in stopwords]
         
         for word in meaningful_words:
             word_freq[word] = word_freq.get(word, 0) + 1
     
     # Get most common themes (appear in multiple documents)
-    common_themes = [word for word, freq in word_freq.items() if freq > 1]
-    return common_themes[:5]  # Return top 5 themes
+    common_themes = []
+    for word, freq in sorted(word_freq.items(), key=lambda x: x[1], reverse=True):
+        if freq > 1:  # Appears in multiple documents
+            common_themes.append(word)
+        if len(common_themes) >= 5:  # Limit to top 5
+            break
+    
+    return common_themes
 
 
 def _generate_conclusion(query: str, key_findings: list[dict], keywords: list[str] | None = None) -> str:
-    """Generate a thoughtful conclusion based on the query and findings"""
+    """Generate a thoughtful conclusion based on the query and findings with improved specificity"""
     conclusion_parts = []
     
-    if len(key_findings) >= 3:
-        conclusion_parts.append("The retrieved documents provide substantial coverage of your query, ")
-        conclusion_parts.append("with multiple perspectives and research approaches represented. ")
-    elif len(key_findings) >= 1:
-        conclusion_parts.append("The available documents provide relevant insights into your query, ")
-        conclusion_parts.append("though additional sources may be beneficial for comprehensive understanding. ")
+    # Analyze the specific content
+    num_docs = len(key_findings)
+    categories = set(f.get('category', 'Unknown') for f in key_findings)
+    actual_titles = [f.get('title', '') for f in key_findings]
     
-    # Analyze research recency and relevance
-    categories = set(f['category'] for f in key_findings)
+    # More specific opening based on actual content
+    if num_docs >= 3:
+        conclusion_parts.append(f"The {num_docs} retrieved documents provide comprehensive coverage of '{query}', ")
+        conclusion_parts.append("spanning multiple research perspectives and methodological approaches. ")
+    elif num_docs >= 1:
+        conclusion_parts.append(f"The {num_docs} relevant document{'s' if num_docs > 1 else ''} ")
+        conclusion_parts.append(f"provide{'s' if num_docs == 1 else ''} targeted insights into '{query}', ")
+        conclusion_parts.append("though additional sources may enhance understanding. ")
+    
+    # Specific domain analysis
     if len(categories) > 1:
-        conclusion_parts.append("The interdisciplinary nature of this topic suggests ")
-        conclusion_parts.append("that comprehensive understanding may require expertise from multiple domains. ")
+        specific_cats = [cat for cat in categories if cat != 'Unknown']
+        if specific_cats:
+            conclusion_parts.append(f"This research spans {', '.join(sorted(specific_cats))} domains, ")
+            conclusion_parts.append("indicating the interdisciplinary nature of the topic. ")
     
+    # Analyze keywords match quality
     if keywords:
-        conclusion_parts.append(f"The specific focus on {', '.join(keywords)} appears to be well-supported ")
-        conclusion_parts.append("by the current literature in this domain.")
+        conclusion_parts.append(f"The focus on {', '.join(keywords)} appears well-supported ")
+        conclusion_parts.append("by the current literature, with documents directly addressing these concepts. ")
+    
+    # Add specificity based on actual document titles if available
+    if actual_titles and any(title.strip() for title in actual_titles):
+        # Mention one specific example
+        first_meaningful_title = next((title for title in actual_titles if len(title.strip()) > 10), None)
+        if first_meaningful_title:
+            conclusion_parts.append(f"Key research includes work on \"{first_meaningful_title[:60]}{'...' if len(first_meaningful_title) > 60 else ''}\", ")
+            conclusion_parts.append("demonstrating active development in this area. ")
     
     return ''.join(conclusion_parts)
 
 
 def _suggest_related_keywords(original_keywords: list[str], matched_keywords: set) -> str:
-    """Suggest related keywords for further exploration"""
-    # Create related keyword suggestions based on matched terms
+    """Suggest related keywords for further exploration with improved suggestions"""
     suggestions = set()
     
+    # Analyze original keywords for better related terms
     for keyword in original_keywords:
-        # Simple approach: suggest variations and related terms
-        if 'quantum' in keyword.lower():
-            suggestions.update(['quantum computing', 'quantum mechanics', 'quantum theory'])
-        elif 'neural' in keyword.lower() or 'neuron' in keyword.lower():
-            suggestions.update(['neural networks', 'neuroscience', 'brain'])
-        elif 'machine' in keyword.lower() or 'learning' in keyword.lower():
-            suggestions.update(['deep learning', 'AI', 'artificial intelligence'])
+        keyword_lower = keyword.lower()
+        # Domain-specific related terms
+        if any(term in keyword_lower for term in ['quantum', 'quant']):
+            suggestions.update(['quantum computing', 'quantum algorithms', 'quantum mechanics', 'NISQ'])
+        elif any(term in keyword_lower for term in ['neural', 'neuron', 'network']):
+            suggestions.update(['deep learning', 'transformers', 'attention mechanisms', 'CNN'])
+        elif any(term in keyword_lower for term in ['machine learning', 'ml', 'ai', 'artificial']):
+            suggestions.update(['deep learning', 'reinforcement learning', 'supervised learning', 'MLOps'])
+        elif any(term in keyword_lower for term in ['adversarial', 'attack', 'security']):
+            suggestions.update(['robustness', 'defense mechanisms', 'cybersecurity', 'threat detection'])
+        elif any(term in keyword_lower for term in ['natural language', 'nlp', 'text']):
+            suggestions.update(['transformers', 'BERT', 'GPT', 'language models'])
+        elif any(term in keyword_lower for term in ['computer vision', 'cv', 'image']):
+            suggestions.update(['object detection', 'image classification', 'CNN', 'segmentation'])
     
-    # Add some matched keywords as suggestions
-    suggestions.update(list(matched_keywords)[:3])
+    # Add some matched keywords as suggestions (they were found in the documents)
+    good_matches = [kw for kw in matched_keywords if len(kw) > 3 and kw not in {'and', 'the', 'for', 'with'}]
+    suggestions.update(good_matches[:3])  # Top 3 matched keywords
     
     # Remove original keywords from suggestions
-    suggestions = suggestions - set(kw.lower() for kw in original_keywords)
+    original_lower = set(kw.lower() for kw in original_keywords)
+    suggestions = suggestions - original_lower
     
-    return ', '.join(list(suggestions)[:5])
+    return ', '.join(list(suggestions)[:5]) if suggestions else 'related terms from the literature'
 
 
 class DynamicRAGPipeline:
