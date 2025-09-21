@@ -4,6 +4,7 @@ import re
 import google.generativeai as genai
 from dotenv import load_dotenv
 import time
+from datetime import datetime
 
 # --- Configuration ---
 load_dotenv()
@@ -89,6 +90,42 @@ def build_prompt(papers_data):
     return prompt_header + prompt_body + prompt_footer
 
 
+def create_rag_compatible_papers(all_papers_map):
+    """
+    Convert papers to RAG-compatible format and save to content stream
+    """
+    # Create content_stream directory
+    os.makedirs('./content_stream', exist_ok=True)
+    
+    rag_papers = []
+    for doc_id, paper_meta in all_papers_map.items():
+        # Convert to RAG format
+        rag_paper = {
+            "id": doc_id,
+            "title": paper_meta.get('title', ''),
+            "abstract": paper_meta.get('abstract', ''),
+            "authors": paper_meta.get('authors', []),
+            "published_date": paper_meta.get('published_date', ''),
+            "url": paper_meta.get('url', ''),
+            "pdf_url": paper_meta.get('pdf_url', paper_meta.get('url', '')),
+            "primary_category": paper_meta.get('primary_category', 'unknown'),
+            "secondary_categories": paper_meta.get('sub_categories', []),
+            "text": paper_meta.get('abstract', ''),  # Use abstract as fallback text
+            "citations": paper_meta.get('references', [])
+        }
+        rag_papers.append(rag_paper)
+    
+    # Save to timestamped file for RAG system
+    timestamp = int(datetime.now().timestamp())
+    timestamped_file = f'./content_stream/papers_{timestamp}.jsonl'
+    
+    with open(timestamped_file, 'w', encoding='utf-8') as f:
+        for paper in rag_papers:
+            f.write(json.dumps(paper) + '\n')
+    
+    print(f"✅ Added {len(rag_papers)} papers to RAG content stream: {timestamped_file}")
+    return rag_papers
+
 def main():
     """
     Main workflow: Reads source data, enriches it with references and AI-generated
@@ -118,51 +155,95 @@ def main():
 
     papers_to_process_for_api = []
     print("📖 Reading text files and extracting references (using robust v3 parser)...")
+    
+    # First, set default values for all papers
+    for doc_id in all_papers_map:
+        all_papers_map[doc_id]['references'] = []
+        all_papers_map[doc_id]['sub_categories'] = []
+    
+    # Try to find text files with various naming patterns
+    text_files_found = 0
     for doc_id, paper_meta in all_papers_map.items():
-        file_path = os.path.join(PAPERS_TEXT_DIR, f"{doc_id}.txt")
-        try:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                content = f.read()
+        content = None
+        file_found = False
+        
+        # Try different possible file paths
+        possible_paths = [
+            os.path.join(PAPERS_TEXT_DIR, f"{doc_id}.txt"),
+            os.path.join(PAPERS_TEXT_DIR, f"{doc_id}_text.txt"),
+            os.path.join('.', f"{doc_id}.txt"),
+            os.path.join('text_files', f"{doc_id}.txt")
+        ]
+        
+        for file_path in possible_paths:
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                    file_found = True
+                    text_files_found += 1
+                    print(f"   ✅ Found text file for {doc_id}")
+                    break
+            except FileNotFoundError:
+                continue
+        
+        if file_found and content:
+            # Extract references from full text
             all_papers_map[doc_id]['references'] = extract_references_with_llm(content, model)
             papers_to_process_for_api.append({
                 "doc_id": doc_id,
                 "primary_category": paper_meta.get('primary_category', 'N/A'),
                 "content": content
             })
-        except FileNotFoundError:
-            print(f"   - Warning: Text file not found for {doc_id}. Skipping.")
-            all_papers_map[doc_id]['references'] = []
+        else:
+            # Use abstract as fallback content
+            abstract = paper_meta.get('abstract', '')
+            if abstract:
+                papers_to_process_for_api.append({
+                    "doc_id": doc_id,
+                    "primary_category": paper_meta.get('primary_category', 'N/A'),
+                    "content": abstract
+                })
+            print(f"   - Warning: Text file not found for {doc_id}. Using abstract as fallback.")
 
-    if not papers_to_process_for_api:
-        print("❌ No text files were found to process. Cannot call API.")
-        return
+    print(f"📊 Processing status: {text_files_found} full text files found, {len(papers_to_process_for_api)} papers total")
 
-    final_prompt = build_prompt(papers_to_process_for_api)
-    print(f"🤖 Sending request for {len(papers_to_process_for_api)} papers to Gemini API...")
-    try:
-        response = model.generate_content(final_prompt)
-        cleaned_response_text = response.text.strip().replace("```json", "").replace("```", "").strip()
-        result_data = json.loads(cleaned_response_text)
-        print("✅ Received and parsed AI-generated sub-categories.")
+    # Always process papers (with full text or abstracts)
+    if papers_to_process_for_api:
+        final_prompt = build_prompt(papers_to_process_for_api)
+        print(f"🤖 Sending request for {len(papers_to_process_for_api)} papers to Gemini API...")
+        try:
+            response = model.generate_content(final_prompt)
+            cleaned_response_text = response.text.strip().replace("```json", "").replace("```", "").strip()
+            result_data = json.loads(cleaned_response_text)
+            print("✅ Received and parsed AI-generated sub-categories.")
 
-        results_map = {result['doc_id']: result['sub_categories'] for result in result_data}
-        for doc_id, sub_categories in results_map.items():
-            if doc_id in all_papers_map:
-                all_papers_map[doc_id]['sub_categories'] = sub_categories
+            results_map = {result['doc_id']: result['sub_categories'] for result in result_data}
+            for doc_id, sub_categories in results_map.items():
+                if doc_id in all_papers_map:
+                    all_papers_map[doc_id]['sub_categories'] = sub_categories
 
-        final_dataset = list(all_papers_map.values())
-        with open(FINAL_OUTPUT_FILE, 'w', encoding='utf-8') as f:
-            for paper_record in final_dataset:
-                f.write(json.dumps(paper_record) + '\n')
+        except Exception as e:
+            print(f"⚠️ API call failed, continuing with basic metadata: {e}")
+            # Continue without AI-generated sub-categories
 
-        print(f"\n📄🎉 Success! Final, comprehensive dataset created at '{FINAL_OUTPUT_FILE}'.")
+    # Always create the final dataset
+    final_dataset = list(all_papers_map.values())
+    
+    # Ensure output directory exists
+    os.makedirs(os.path.dirname(FINAL_OUTPUT_FILE), exist_ok=True)
+    
+    with open(FINAL_OUTPUT_FILE, 'w', encoding='utf-8') as f:
+        for paper_record in final_dataset:
+            f.write(json.dumps(paper_record) + '\n')
 
-    except Exception as e:
-        print(f"\n❌ An error occurred during the API call or final processing: {e}")
-        if 'response' in locals():
-            with open('error_response.txt', 'w') as f:
-                f.write(response.text)
-            print("   - Raw API response saved to 'error_response.txt' for debugging.")
+    print(f"✅ Created enriched dataset at '{FINAL_OUTPUT_FILE}' with {len(final_dataset)} papers")
+
+    # Create RAG-compatible papers and add to content stream
+    create_rag_compatible_papers(all_papers_map)
+    
+    print(f"\n📄🎉 Success! Papers processed and added to RAG content stream.")
+    print(f"   - {text_files_found} papers with full text processed")
+    print(f"   - {len(final_dataset)} total papers available for RAG system")
 
 
 if __name__ == "__main__":
