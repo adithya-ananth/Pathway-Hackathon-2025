@@ -7,7 +7,7 @@ import os
 # --- Configuration ---
 # --- MODIFICATION: Read keywords from a config file ---
 CONFIG_FILENAME = "config.json"
-MAX_RESULTS = 20
+MAX_RESULTS = 3
 OUTPUT_FILENAME = "arxiv_papers.jsonl"
 
 def load_keywords_from_config(filename: str) -> list:

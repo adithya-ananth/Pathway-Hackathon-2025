@@ -401,7 +401,7 @@ for pdf_id in doc_ids:
         raise Exception(f"Failed to download PDF: {response.status_code}")
 
     # 2. Initialize your parser (with appropriate options if needed)
-    parser = DoclingParser()
+    parser = DoclingParser(pdf_pipeline_options={"do_table_structure": False})
 
     # 3. Parse the PDF in an async context
     async def main():
