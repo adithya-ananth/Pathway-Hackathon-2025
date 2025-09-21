@@ -9,17 +9,22 @@ import json
 import os
 
 class ContentSchema(pw.Schema):
-    id: str
+    # Match content_stream/complete_papers_data.jsonl exactly
+    paper_id: str
     title: str
     abstract: str
     authors: list[str]
-    published_date: str
-    url: str
-    pdf_url: str
-    primary_category: str
-    secondary_categories: list[str]
-    text: str
-    citations: list[str]
+    published_date: str | None
+    url: str | None
+    pdf_url: str | None
+    primary_category: str | None
+    sub_categories: list[str] | None
+    journal_ref: str | None
+    doi: str | None
+    references: list[str] | None
+    text: str | None
+    file_path: str | None
+    citations: list[str] | None
     
 class QuerySchema(pw.Schema):
     query: str
@@ -34,11 +39,16 @@ def setup_dynamic_rag_pipeline(content_table: pw.Table[ContentSchema]):
     
     # Transform the content table to prepare data for vector store
     # The 'text' field will be embedded, everything else stored as metadata
+    def _choose_text(text, title, abstract):
+        if text:
+            return text
+        return (title or "") + "\n\n" + (abstract or "")
+
     vector_data = content_table.select(
-        data=pw.this.text,
+        data=pw.apply(_choose_text, pw.this.text, pw.this.title, pw.this.abstract),
         metadata=pw.apply(
-            lambda id, title, abstract, authors, published_date, url, pdf_url, primary, secondary, citations: {
-                "id": id,
+            lambda paper_id, title, abstract, authors, published_date, url, pdf_url, primary, subcats, citations: {
+                "id": paper_id,
                 "title": title,
                 "abstract": abstract,
                 "authors": authors,
@@ -46,10 +56,13 @@ def setup_dynamic_rag_pipeline(content_table: pw.Table[ContentSchema]):
                 "url": url,
                 "pdf_url": pdf_url,
                 "primary_category": primary,
-                "secondary_categories": secondary,
+                # compatible key name for any downstream references
+                "secondary_categories": subcats,
+                # also include the canonical sub_categories key
+                "sub_categories": subcats,
                 "citations": citations
             },
-            pw.this.id,
+            pw.this.paper_id,
             pw.this.title,
             pw.this.abstract,
             pw.this.authors,
@@ -57,7 +70,7 @@ def setup_dynamic_rag_pipeline(content_table: pw.Table[ContentSchema]):
             pw.this.url,
             pw.this.pdf_url,
             pw.this.primary_category,
-            pw.this.secondary_categories,
+            pw.this.sub_categories,
             pw.this.citations
         )
     )
@@ -100,10 +113,23 @@ def setup_dynamic_content_pipeline():
         content_stream = pw.debug.table_from_rows(
             schema=ContentSchema,
             rows=[
-                (item["id"], item["title"], item["abstract"], item["authors"],
-                 item["published_date"], item["url"], item["pdf_url"], 
-                 item["primary_category"], item["secondary_categories"], 
-                 item["text"], item["citations"])
+                (
+                    item.get("id") or item.get("paper_id"),
+                    item.get("title"),
+                    item.get("abstract"),
+                    item.get("authors"),
+                    item.get("published_date"),
+                    item.get("url"),
+                    item.get("pdf_url"),
+                    item.get("primary_category"),
+                    item.get("sub_categories") or item.get("secondary_categories"),
+                    item.get("journal_ref"),
+                    item.get("doi"),
+                    item.get("references"),
+                    item.get("text"),
+                    item.get("file_path") or item.get("file_url"),
+                    item.get("citations"),
+                )
                 for item in sample_data
             ]
         )
@@ -209,8 +235,8 @@ def filter_by_keywords(docs, keywords):
             str(metadata.get("title", "")),
             str(metadata.get("abstract", "")),
             str(metadata.get("primary_category", "")),
-            " ".join(metadata.get("secondary_categories", [])),
-            " ".join(metadata.get("authors", []))
+            " ".join(metadata.get("secondary_categories", []) or metadata.get("sub_categories", []) or []),
+            " ".join(metadata.get("authors", []) or [])
         ]).lower()
         
         # Check for keyword matches
