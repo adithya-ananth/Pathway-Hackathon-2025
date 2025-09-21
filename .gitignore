@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -338,3 +339,10 @@ external_team_example.py
 README_INTEGRATION.md
 EXTERNAL_TEAM_GUIDE.md
 test_dynamic_rag.py
+=======
+#arxiv_papers.jsonl
+.env
+papers_text
+downloaded_papers
+.gitignore
+>>>>>>> dcd97ad862a0c597f35d908cb803ff0a55925955
