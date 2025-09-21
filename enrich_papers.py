@@ -113,8 +113,10 @@ def create_rag_compatible_papers(all_papers_map):
             "journal_ref": None,  # Not available in current data
             "doi": None,  # Not available in current data
             "references": paper_meta.get('references', []),
-            "text": paper_meta.get('abstract', ''),  # Use abstract as fallback text
-            "file_path": None,  # Not available in current data
+            # Prefer full extracted text, otherwise fallback to abstract
+            "text": paper_meta.get('full_text', paper_meta.get('abstract', '')),
+            # Include the on-disk text path if available
+            "file_path": paper_meta.get('file_path'),
             "citations": paper_meta.get('references', [])  # Use references as citations
         }
         rag_papers.append(rag_paper)
@@ -169,6 +171,7 @@ def main():
     for doc_id, paper_meta in all_papers_map.items():
         content = None
         file_found = False
+        selected_path = None
         
         # Try different possible file paths
         possible_paths = [
@@ -183,8 +186,9 @@ def main():
                 with open(file_path, 'r', encoding='utf-8') as f:
                     content = f.read()
                     file_found = True
+                    selected_path = file_path
                     text_files_found += 1
-                    print(f"   ✅ Found text file for {doc_id}")
+                    print(f"   ✅ Found text file for {doc_id} at {file_path}")
                     break
             except FileNotFoundError:
                 continue
@@ -192,6 +196,9 @@ def main():
         if file_found and content:
             # Extract references from full text
             all_papers_map[doc_id]['references'] = extract_references_with_llm(content, model)
+            # Save the discovered file path and full text for downstream outputs
+            all_papers_map[doc_id]['file_path'] = selected_path
+            all_papers_map[doc_id]['full_text'] = content
             papers_to_process_for_api.append({
                 "doc_id": doc_id,
                 "primary_category": paper_meta.get('primary_category', 'N/A'),
@@ -235,6 +242,7 @@ def main():
     # Ensure output directory exists
     os.makedirs(os.path.dirname(FINAL_OUTPUT_FILE), exist_ok=True)
     
+    # Write enriched records including file_path if available
     with open(FINAL_OUTPUT_FILE, 'w', encoding='utf-8') as f:
         for paper_record in final_dataset:
             f.write(json.dumps(paper_record) + '\n')

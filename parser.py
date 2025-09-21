@@ -30,6 +30,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 import requests
 import asyncio
+from pdfminer.high_level import extract_text
 
 class DoclingParser(pw.UDF):
     """
@@ -390,32 +391,50 @@ except FileNotFoundError:
     print(f"Error: The file '{file_path}' was not found.")
 
 for pdf_id in doc_ids:
+    try:
+        # Ensure output directory exists
+        import os
+        os.makedirs("papers_text", exist_ok=True)
 
-    # 1. Download the PDF file from a URL
-    pdf_id = "2509.15226v1"
-    pdf_url = "https://arxiv.org/pdf/" + pdf_id  # Replace with your actual arXiv PDF URL
-    response = requests.get(pdf_url)
-    if response.status_code == 200:
+        # 1. Download the PDF file from arXiv
+        pdf_url = f"https://arxiv.org/pdf/{pdf_id}.pdf"
+        headers = {"User-Agent": "Mozilla/5.0 (compatible; PaperParser/1.0)"}
+        response = requests.get(pdf_url, headers=headers, timeout=30)
+        if response.status_code != 200:
+            print(f"Failed to download PDF for {pdf_id}: HTTP {response.status_code}")
+            continue
         pdf_bytes = response.content
-    else:
-        raise Exception(f"Failed to download PDF: {response.status_code}")
 
-    # 2. Initialize your parser (with appropriate options if needed)
-    parser = DoclingParser(pdf_pipeline_options={"do_table_structure": False})
+        # Try lightweight text extraction first (pdfminer)
+        text_out = ""
+        try:
+            text_out = extract_text(io.BytesIO(pdf_bytes)) or ""
+        except Exception as e:
+            print(f"pdfminer extraction failed for {pdf_id}: {e}")
+            text_out = ""
 
-    # 3. Parse the PDF in an async context
-    async def main():
-        results = await parser.parse(pdf_bytes)
-        for text, meta in results:
-            with open("papers_text/"+pdf_id+".txt", "a") as f:
-                f.write(text.strip())
+        if not text_out.strip():
+            # Fallback to DoclingParser (heavier), if available
+            try:
+                parser = DoclingParser(pdf_pipeline_options={"do_table_structure": False})
 
-            # print(meta.keys())
+                async def main():
+                    results = await parser.parse(pdf_bytes)
+                    return "\n\n".join(t for t, _ in results)
 
-            # print(meta['doc_items'])
-            # print(meta['pages'])
-            # break
+                text_out = asyncio.run(main())
+            except Exception as e:
+                print(f"Docling fallback failed for {pdf_id}: {e}")
+                text_out = ""
 
-        print("")
+        if not text_out.strip():
+            print(f"No text extracted for {pdf_id}, skipping save.")
+            continue
 
-    asyncio.run(main())
+        out_path = os.path.join("papers_text", f"{pdf_id}.txt")
+        with open(out_path, "w", encoding="utf-8") as f:
+            f.write(text_out)
+        print(f"Saved text to {out_path}")
+
+    except Exception as e:
+        print(f"Unexpected error processing {pdf_id}: {e}")
