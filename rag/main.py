@@ -14,18 +14,13 @@ class ContentSchema(pw.Schema):
     pdf_url: str
     primary_category: str
     secondary_categories: list[str]
+    text: str
+    citations: list[str]
     
 class QuerySchema(pw.Schema):
     query: str
     top_k: int = 5
 
-class VectorStoreSchema(pw.Schema):
-    id: str
-    title: str
-    primary_category: str
-    secondary_categories: list[str]
-    combined_text: str
-    metadata: dict
 
 
 def setup_dynamic_rag_pipeline(content_table: pw.Table[ContentSchema]):
@@ -68,7 +63,7 @@ def setup_dynamic_rag_pipeline(content_table: pw.Table[ContentSchema]):
     
     # Create vector store
     vector_store = VectorStoreServer(
-        *vector_data,
+        vector_data,
         embedder=embedder,
         splitter=None,  # No splitting needed for structured data
         parser=None     # No parsing needed
@@ -164,25 +159,15 @@ def create_rag_system():
     # Create sample content data
     sample_data = create_sample_data()
     
-    # Convert to Pathway table format
-    content_rows = []
-    for item in sample_data:
-        content_rows.append({
-            "id": item["id"],
-            "title": item["title"],
-            "abstract": item["abstract"],
-            "authors": item["authors"],
-            "published_date": item["published_date"],
-            "url": item["url"],
-            "pdf_url": item["pdf_url"],
-            "primary_category": item["primary_category"],
-            "secondary_categories": item["secondary_categories"]
-        })
-    
     # Create content table
     content_table = pw.debug.table_from_rows(
         schema=ContentSchema,
-        rows=content_rows
+        rows=[
+            (item["id"], item["title"], item["abstract"], item["authors"],
+             item["published_date"], item["url"], item["pdf_url"], 
+             item["primary_category"], item["secondary_categories"])
+            for item in sample_data
+        ]
     )
     
     # Set up RAG pipeline
@@ -197,7 +182,7 @@ def create_rag_system():
     
     query_table = pw.debug.table_from_rows(
         schema=QuerySchema,
-        rows=query_rows
+        rows=[(row["query"], row["top_k"]) for row in query_rows]
     )
     
     # Query the system
@@ -239,7 +224,12 @@ class DynamicRAGPipeline:
             # Assume it's a list of dictionaries
             self.content_table = pw.debug.table_from_rows(
                 schema=ContentSchema,
-                rows=content_source
+                rows=[
+                    (item["id"], item["title"], item["abstract"], item["authors"],
+                     item["published_date"], item["url"], item["pdf_url"], 
+                     item["primary_category"], item["secondary_categories"])
+                    for item in content_source
+                ]
             )
         else:
             raise ValueError("Unsupported content source type")
@@ -262,7 +252,7 @@ class DynamicRAGPipeline:
             
         query_table = pw.debug.table_from_rows(
             schema=QuerySchema,
-            rows=[{"query": query, "top_k": top_k}]
+            rows=[(query, top_k)]
         )
         
         return query_rag_pipeline(self.vector_store, query_table)
