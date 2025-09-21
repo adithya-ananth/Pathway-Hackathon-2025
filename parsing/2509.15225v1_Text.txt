@@ -1,0 +1,334 @@
+HEADINGS:
+# Lost in Translation? Vocabulary Alignment for Source-Free Domain Adaptation in Open-Vocabulary Semantic Segmentation
+CONTENT:
+Silvio Mazzucco 1,2*
+silvio.mazzucco@thegoodailab.org
+Carl Persson 1*
+carl.persson@thegoodailab.org
+Mattia Segu 1,2,3
+mattia.segu@thegoodailab.org
+Pier Luigi Dovesi 1
+pier@thegoodailab.org
+Federico Tombari 3,4
+tombari@google.com
+Luc Van Gool 5
+vangool@vision.ee.ethz.ch
+Matteo Poggi 1,6
+m.poggi@unibo.it arXiv:2509.15225v1  [cs.CV]  18 Sep 2025
+- 1 The Good AI Lab thegoodailab.org
+2 ETH Zurich
+- 3 Google
+4 Technical University of Munich
+5 INSAIT, Sofia University, St. Kliment Ohridski
+- 6 University of Bologna
+* joint first authorshipHEADINGS:
+# Abstract
+CONTENT:
+We introduce VocAlign , a novel source-free domain adaptation framework specifically designed for VLMs in open-vocabulary semantic segmentation. Our method adopts a student-teacher paradigm enhanced with a vocabulary alignment strategy, which improves pseudo-label generation by incorporating additional class concepts. To ensure efficiency, we use Low-Rank Adaptation (LoRA) to fine-tune the model, preserving its original capabilities while minimizing computational overhead. In addition, we propose a Top-K class selection mechanism for the student model, which significantly reduces memory requirements while further improving adaptation performance. Our approach achieves a notable +6.11 mIoU improvement on the CityScapes dataset and demonstrates superior performance on zero-shot segmentation benchmarks, setting a new standard for source-free adaptation in the open-vocabulary setting.
+Project page: https://thegoodailab.org/blog/vocalignHEADINGS:
+# 1 Introduction
+CONTENT:
+Open-vocabulary semantic segmentation aims to assign a class label to every pixel in an image, extending traditional semantic segmentation by removing the constraint of a fixed set of
+©2025. The copyright of this document resides with its authors.
+Figure 1: Method overview. Left: Our student-teacher framework and the additional techniques it introduces. Right: Impact of VocAlign on selected classes from CityScapes.
+classes. This is enabled by Vision-Language Models (VLMs), which leverage multimodal synergies and are pre-trained on web-scale datasets. While this ability allows broader generalization, it also makes VLMs more sensitive to domain shifts, which occur in the more complex joint vision-text space, often resulting in poor performance on unseen datasets with different categories.HEADINGS:
+# 1 Introduction
+CONTENT:
+Unsupervised domain adaptation (UDA) has been widely studied as a solution to domain shifts [45], allowing models to adapt to new domains without requiring annotations for the target domain. However, most UDA approaches [1, 18, 19, 20] assume access to the source data on which the original model was trained. This assumption is impractical for VLMs, which are typically trained on proprietary, web-scale datasets that are not publicly available.
+Source-free domain adaptation (SFDA) addresses this limitation by enabling models to adapt without requiring access to source data. While SFDA offers a more efficient and scalable paradigm, it also introduces challenges due to the absence of annotated samples during adaptation. This approach is particularly well-suited for adapting VLMs, given the impracticality of accessing their massive training datasets. However, existing SFDA methods are primarily designed for models without open-vocabulary capabilities or multimodal visionlanguage interactions, limiting their applicability to VLMs. Moreover, the sheer size and diversity of VLM training datasets exacerbate adaptation challenges, as distribution shifts and overlapping labels in the feature space become more pronounced.HEADINGS:
+# 1 Introduction
+CONTENT:
+In this work, we propose VocAlign , the first SFDA framework specifically designed for VLMs in open-vocabulary semantic segmentation. To tackle the unique challenges posed by VLMs, we adopt a student-teacher framework and extend it with techniques tailored to their multimodal and open-vocabulary nature, as shown in Figure 1 (left). First, we enhance pseudo-label generation by augmenting the teacher model's vocabulary with additional class concepts. This leverages the open-vocabulary capabilities of VLMs, improving the alignment between visual embeddings and pseudo-labels across domains, thereby enabling more effective adaptation. Second, to manage the computational cost of adapting large VLMs, we employ parameter-efficient fine-tuning using Low-Rank Adaptation (LoRA) modules [21]. This approach preserves the original knowledge learned from web-scale data while minimizing overhead. Third, we introduce a Top-K class selection mechanism for the student model, optimizing only a subset of classes per iteration based on pseudo-label predictions. This significantly reduces memory requirements without sacrificing performance.HEADINGS:
+# 1 Introduction
+CONTENT:
+We evaluate our method on CAT-Seg [7], a state-of-the-art open-vocabulary segmentation model, using the CityScapes dataset. Our approach achieves substantial improvements
+across several classes, including complete recovery for previously unrecognizable ones, as shown in Figure 1 (right). Furthermore, we extend our evaluation to zero-shot segmentation datasets, demonstrating the effectiveness of our method in diverse settings with varying numbers of target classes.
+Our main contributions are summarized as follows:
+- We propose the first SFDA framework specifically tailored for open-vocabulary semantic segmentation models built on VLMs.
+- We introduce a vocabulary-alignment strategy that improves pseudo-label quality by leveraging the multimodal capabilities of VLMs.
+- We reduce computational complexity through the combination of LoRA modules and Top-K class selection, achieving memory efficiency while further improving performance.HEADINGS:
+# 2 Related Work
+CONTENT:
+Webriefly review the literature relevant to our work, covering open-vocabulary semantic segmentation, unsupervised domain adaptation and parameter-efficient fine-tuning approaches.
+Semantic Segmentation with VLMs. Semantic segmentation is one of the key tasks [15, 23, 43] that has greatly benefited from the advent of vision-language models (VLMs) such as CLIP [37] and its variants [35, 56]. Zhou et al. [55] showed that, beyond extracting global feature representations from CLIP, it is possible to directly obtain low-resolution segmentation maps, while Wu et al. [48] refined the extraction and processing pipeline.HEADINGS:
+# 2 Related Work
+CONTENT:
+Acommon objective of these methods is to leverage CLIP's knowledge to handle unseen classes. Li et al. [26] introduced a framework in which text embeddings are explicitly aligned with visual representations, maximizing the correlation between related textual and visual concepts. Similarly, OVSeg [29] adapts the CLIP backbone to improve the performance of the mask proposal mechanism. Recent work, such as [51, 59], simplifies the pipeline by moving to one-stage methods. Cho et al. [7] propose aggregating cost volumes generated by CLIP along both spatial and class dimensions, while Xie et al. [49] extend this idea to further enhance accuracy.HEADINGS:
+# 2 Related Work
+CONTENT:
+Unsupervised Domain Adaptation. Various UDA methods have been developed for downstream tasks such as image classification [12, 31, 32, 41], object detection [5, 6, 28, 39], and semantic segmentation [3, 16, 46, 60]. Traditional UDA approaches [4, 18, 19, 20, 50, 52] often assume access to source data during adaptation. However, this assumption is increasingly impractical due to privacy and accessibility concerns. As a result, UDA research has expanded into source-free and test-time adaptation settings, which explicitly address the absence of source data during adaptation.
+In test-time adaptation (e.g., [44]), the additional challenge is adapting the model online, accounting for the temporal evolution of distribution shifts in the data. Liu et al. [30] employ adversarial training by generating synthetic samples resembling source-domain data to guide adaptation. Kundu et al. [24] address domain generalization by leveraging source data during training before applying source-free adaptation to the target domain. Wang et al. [47] propose a student-teacher framework with augmentation-averaged pseudo-labels.HEADINGS:
+# 2 Related Work
+CONTENT:
+More recently, methods tailored to vision-language models have appeared. Samadh et al. [40] leverage the alignment of learnable prompts from visual and text encoders during
+Figure 2: CAT-Seg backbone. At its core, the cost aggregation module acts at both the spatial and the class levels. Finally, predicted classes are selected through a softmax layer.
+adaptation. Choe et al. [8] explore open-set domain adaptation for semantic segmentation, although not in a source-free setting.
+One of the most popular approaches involves low-rank transformations. Inspired by [21], these methods reparameterize the update delta weights by decomposing them into two lower-rank matrices. Building on this foundation, methods such as [53] explore dynamically adjusting the rank of LoRA matrices, while [22] investigates combining multiple LoRA modules to enhance flexibility and performance.
+Parameter-Efficient Fine-Tuning Methods. These methods address the challenge of adapting models with billions of parameters by minimizing the number of learnable parameters while still leveraging the full potential of pre-trained weights.HEADINGS:
+# 2 Related Work
+CONTENT:
+As an alternative, adapter-based methods have been widely adopted for parameter-efficient fine-tuning [17, 36], while prompt-based tuning [25, 27] turns prompts into learnable parameters to improve the accuracy of VLMs with minimal overhead [9, 13, 57, 58]. These parameter-efficient strategies are often applied in the context of UDA [11, 14].HEADINGS:
+# 3 Method
+CONTENT:
+Wenowpresent our framework, VocAlign. First, we introduce some background about openvocabulary semantic segmentation and the baseline model, then we describe our teacherstudent framework and the specific techniques tailoring it to the open-vocabulary setting.HEADINGS:
+# 3.1 Preliminaries: CAT-Seg Backbone
+CONTENT:
+VocAlign is applied on CAT-Seg [7], a state-of-the-art model for open-vocabulary segmentation shown in Figure 2, which consists of three components: the feature extractors (CLIP encoders with an additional visual encoder), the cost aggregation module, and the upsampling decoder.
+The feature extractors include a slightly modified version of the CLIP image encoder alongside the standard CLIP text encoder. Through this backbone, CAT-Seg extracts textual and dense visual features D L = φ L ( t ) , D V = φ V ( x T ) , which are used to build a cost volume C ∈ R H × W × P × Nc composed of cosine similarities [38] between multimodal features:
+<!-- formula-not-decoded -->HEADINGS:
+# 3.1 Preliminaries: CAT-Seg Backbone
+CONTENT:
+where i denotes pixel coordinates and n corresponds to the text embedding of one of the Nc classes. Text embeddings are enriched with P diverse prompts, such as 'a painting of a class ' or 'a rendering of a class ,' resulting in embeddings of shape φ L ∈ R Nc × P × dL .
+To refine the coarse cost volume, CAT-Seg employs a cost aggregation module with two distinct aggregation mechanisms, both implemented with Swin Transformers: i) Spatial Aggregation , modeling pixel-level spatial interactions to propagate information; and ii) Class Aggregation , focusing on interactions among different semantic classes.
+After refinement, the decoder upsamples the volume to match the input resolution. The output is then passed through a softmax layer to produce the final predictions.HEADINGS:
+# 3.2 Student-teacher framework
+CONTENT:
+As the baseline for VocAlign, we adopt student-teacher knowledge distillation [42] to transfer knowledge from the source to the target domain. Initially, a neural network f θ is trained on the source domain using source images X S = { x s k } Ns k = 1 and their respective labels Y S = { y s k } Ns k = 1 . In the context of semantic segmentation, the most common loss is the pixel-wise cross-entropy:
+<!-- formula-not-decoded -->
+In the SFDA setting we target, source images and labels are no longer available after deployment. From this point onward, training data refers to target images X T = { x T k } NT k = 1 , which lack labels.
+The pre-trained model serves as the teacher g φ in our SFDA framework, generating pseudo-labels that supervise a second instance of the model, the student f θ , which is adapted to the target domain. Pseudo-labels are generated by feeding target images to g φ :
+<!-- formula-not-decoded -->HEADINGS:
+# 3.2 Student-teacher framework
+CONTENT:
+where [ · ] denotes the Iverson bracket. We also weight the loss by exploiting class probabilities predicted by g φ , computing the ratio of pixels whose confidence exceeds a threshold τ . The confidence q T is represented by the pixelwise maximum softmax probability:
+<!-- formula-not-decoded -->
+During adaptation, the teacher remains frozen with no gradients backpropagated through it. However, it is updated over time as an exponential moving average (EMA) of the student weights [42], specifically: φ t + 1 ← αφ t +( 1 -α ) θ t , where α ∈ [ 0 , 1 ] controls how much the student update influences the teacher.
+Student input masking. Following [20], we apply masking to the images fed to f θ to improve adaptation. A binary mask is sampled as:
+<!-- formula-not-decoded -->HEADINGS:
+# 3.2 Student-teacher framework
+CONTENT:
+where [ · ] is the Iverson bracket, b the patch size, r the mask ratio, m ∈ [ 0 , ..., W / b -1 ] , n ∈ [ 0 , ..., W / b -1 ] the patch indices, and U ( 0 , 1 ) a uniform distribution. Student predictions ˆ y M are thus based only on the visible context of the masked image:
+Figure 3: VocAlign core components. Left: example of Vocabulary Alignment on CityScapes. Right: Top-K selection in action.
+<!-- formula-not-decoded -->
+Finally, the student is supervised by a cross-entropy loss H between its predictions and the teacher's pseudo-labels: L M = q T H ( ˆ y M , p T ) , where p T are pseudo-labels and q T is the confidence-based weight.HEADINGS:
+# 3.3 Vocabulary Alignment
+CONTENT:
+To address the challenges of the open-vocabulary setting, VocAlign introduces data augmentation in the text space, rather than relying solely on image augmentations [47]. We enrich target dataset classes with concepts -additional text descriptions or synonyms, used only during adaptation. Since the source model is pre-trained on massive datasets, it is biased toward classes present in its training data, which may overlap only partially or under different names with target classes. This is a new issue in SFDA for VLMs, as domain shifts involve not only visual appearance but also vision-text alignment.
+For example, if the class 'animal' was present during pre-training, adding it as a concept to the target class 'cat' can improve performance, especially when no other animal-related classes exist in the target dataset. Accordingly, the cost volume is expanded to ntot classes, including the original ones plus concepts. Each class n , n = 1 , . . . , Nc , can be augmented with c ( n ) concepts. Before pseudo-label generation, concepts are aggregated back to their original class:
+<!-- formula-not-decoded -->HEADINGS:
+# 3.3 Vocabulary Alignment
+CONTENT:
+To streamline concept creation for large datasets, we generate them automatically using ChatGPT o1, with prompts designed to capture context, objectives, and dataset information. More details are reported in the supplementary material.
+where p c i j is the probability over ntot classes including concepts, and p n i j is the final probability for the Nc original classes. An example is shown in Figure 3 (left).HEADINGS:
+# 3.4 Top-K selection
+CONTENT:
+Adapting to many classes can be computationally prohibitive. To address this, we use teacher predictions (enhanced by concepts) to identify likely classes in an image. Given teacher
+probabilities ˆ y ∈ R Nc , H , W , we compute the mean activation per class and select the Top-K with the highest averages. The remaining classes are pruned from the cost volume before aggregation, as illustrated in Figure 3 (right).
+As a result, only a subset of classes receives supervision per iteration. Although this may seem to reduce supervision, the higher-quality pseudo-labels produced by the teacher ensure that present classes are reliably predicted, ultimately providing stronger supervision for those classes.HEADINGS:
+# 4 Experiments
+CONTENT:
+We now introduce our experimental results. First, we describe the implementation details, the datasets used in our evaluation, and the training scheduling, then we report our main experiments and conclude with some analysis and ablation studies.HEADINGS:
+# 4.1 Implementation Details
+CONTENT:
+Our method is based on the mmsegmentation framework [10] and its CAT-Seg implementation, and we build our student-teacher framework integrating the code provided by [20]. We used CAT-Seg backbone with Resnet-101 and ViT-B encoders, modified to use 10 prompt templates repeated eight times, rather than the 80 templates in the original model, for efficiency - we will also provide results for the full 80 templates. We start from CAT-Seg weights being pre-trained on COCO-Stuff [2], and we adapt these weights in any of the experiments we report about. We introduce LoRA exclusively in the CLIP backbone, to the first 4 layers of the ViT for the image encoder and of the transformer for the text encoder, in the attention projection matrices. In the standard setting, we use a LoRA rank equal to 2. We keep the rest of the model frozen.HEADINGS:
+# 4.1 Implementation Details
+CONTENT:
+CityScapes Training. Wetrain our method for 40k iterations with the AdamW optimizer [33], a learning rate of 5 × 10 -5 after a quick warm-up phase at the beginning of the training, starting at 5 × 10 -6 for 500 iterations. We use a batch size of 2 and a Top-K selection value of 15. The input data is augmented by randomly cropping the images with 512 × 512 crops, and by applying random color jitter. The image is masked with a masking ratio of 0.7. Similarly to the majority of the methods, we set α = 0 . 99 for the EMA update of the teacher. Suitable concepts were chosen manually based on the CityScapes class descriptions.HEADINGS:
+# 4.1 Implementation Details
+CONTENT:
+Datasets. We mainly use CityScapes for training and evaluation, as it is a commonly utilized dataset to evaluate domain adaptation methods, and because it is sufficiently different from COCO-Stuff to serve as a favorable target domain. It is comprised of 2975 training images and 500 validation samples, with a total of 19 classes. To proof that our method also generalizes to other datasets, we use ADE20K-150 [54] and PASCAL-Context 59 [34]. These datasets were utilized to measure the zero-shot performance of the original CAT-Seg model. ADE20k-150 comprises 20k training and 2k validation images, annotated with a total of 150 classes. PASCAL-Context 59 contains 5k training and validation images, with 59 class labels. The mean Intersection over Union (mIoU) is used as the main metric.HEADINGS:
+# 4.1 Implementation Details
+CONTENT:
+Multi-dataset Training. To benchmark the generalizability of our method we choose a single configuration to apply to all three datasets. We train for 15k iterations and use a batch size of 2 when it is applicable, otherwise, a batch size of 1 is applied. The input images are augmented by random cropping images to 512 × 512 crops and by applying random flipping, photometric distortion, and color jitter. The learning rate is chosen to be 3 × 10 -5 and weHEADINGS:
+# 4.1 Implementation Details
+CONTENT:
+Table 1: Per-class results for top 4 best and worst classes on CityScapes. We compare VocAlign to the Zero-Shot predictions by CAT-Seg. Last column shows mIoU on all classes.
+
+Zero-Shot CAT-Seg, car = 76.38. Zero-Shot CAT-Seg, fence = 38.37. Zero-Shot CAT-Seg, road = 86.03. Zero-Shot CAT-Seg, mbike = 55.35. Zero-Shot CAT-Seg, ... = .... Zero-Shot CAT-Seg, pole = 27.47. Zero-Shot CAT-Seg, truck = 23.22. Zero-Shot CAT-Seg, wall = 9.77. Zero-Shot CAT-Seg, terrain = 0.02. Zero-Shot CAT-Seg, mIoU = 47.56. VocAlign (ours), car = 67.48. VocAlign (ours), fence = 31.70. VocAlign (ours), road = 84.87. VocAlign (ours), mbike = 54.83. VocAlign (ours), ... = .... VocAlign (ours), pole = 37.71. VocAlign (ours), truck = 46.76. VocAlign (ours), wall = 34.32. VocAlign (ours), terrain = 45.95. VocAlign (ours), mIoU = 53.67. Improve (%), car = -8.9. Improve (%), fence = -6.67. Improve (%), road = -1.16. Improve (%), mbike = -0.52. Improve (%), ... = .... Improve (%), pole = +10.24. Improve (%), truck = +23.54. Improve (%), wall = +24.55. Improve (%), terrain = +45.93. Improve (%), mIoU = +6.11HEADINGS:
+# 4.1 Implementation Details
+CONTENT:
+Figure 4: Qualitative results on CityScapes dataset. From left to right: ground truth segmentation map, the zero-shot CAT-Seg prediction, and VocAlign prediction.
+apply a masking ration of 0.5. Concepts are generated using ChatGPT-o1 for all datasets. We utilize a Top-K value of 50 when training the modified 10 prompt template CAT-Seg model and a Top-K value of 35 when training on the full CAT-Seg model.HEADINGS:
+# 4.2 Main Results
+CONTENT:
+Results on CityScapes. Our initial results on CityScapes are shown in Table 1, for top-4 best and worst classes improved by VocAlign (complete results in the supplementary material). V ocAlign demonstrates a strong capability to adapt, especially for classes that perform poorly in the zero-shot setting. This includes the terrain class, which improves drastically from a nigh zero mIoU evaluation. Many of the large improvements are thought to stem from ambiguities in the class names and their descriptions. For example, the wall class in CityScapes is defined as an individual standing wall, not part of a building . However, since wall is the only word delivered to the segmentation model, this additional class information is lost. This is something we can recover by adding concepts or modifying the teacher classes, which is likely the cause for the large improvements in this particular class. Furthermore, we found that our method decreases the performance for certain classes - most notably cars. This is thought to be caused by the hood of the capturing vehicle, which is not masked during training. The model therefore learns to classify the general area of the hood and, to some degree, the nearby road, as a car. The hood is then masked during validation, which results in parts of the road being misclassified as a car, reducing the score of this particular category, as shown in Figure 4. We further confirm this hypothesis in the supplementary material.HEADINGS:
+# 4.2 Main Results
+CONTENT:
+Multi-dataset results. Our evaluation on multiple datasets is shown in Table 2. Accordingly, our method can generalize well to other datasets using a generic configuration, where the model adaptability remains strong. The decrease in performance, compared to the CityScapes training, can be partly explained by the use of prompts generated by ChatGPTHEADINGS:
+# 4.2 Main Results
+CONTENT:
+Table 2: Multi-dataset evaluation. Left: 10-prompt CAT-Seg, Min-Entropy baseline and ablated versions of VocAlign. Right: original 80-prompt CAT-Seg.
+
+Zero-Shot, CityScapes = 47.56. Zero-Shot, PC-59 = 55.52. Zero-Shot, ADE20k-150 = 26.88. Zero-Shot,  = Method. Zero-Shot, CityScapes = . Zero-Shot,  = PC-59. Zero-Shot,  = ADE20k-150. Min-Entropy, CityScapes = 47.67. Min-Entropy, PC-59 = 55.87. Min-Entropy, ADE20k-150 = 27.23. Min-Entropy,  = Zero-Shot. Min-Entropy, CityScapes = 47.88. Min-Entropy,  = 56.94. Min-Entropy,  = 27.22. Teacher-Student, CityScapes = 44.58. Teacher-Student, PC-59 = 55.20. Teacher-Student, ADE20k-150 = 26.55. Teacher-Student,  = Min-Entropy. Teacher-Student, CityScapes = 47.95. Teacher-Student,  = -. Teacher-Student,  = -. + Masking, CityScapes = 47.71. + Masking, PC-59 = 55.89. + Masking, ADE20k-150 = 26.84. + Masking,  = VogAlign. + Masking, CityScapes = 48.97. + Masking,  = 57.32. + Masking,  = 27.40. + Vocab Alignment, CityScapes = 49.58. + Vocab Alignment, PC-59 = 56.81. + Vocab Alignment, ADE20k-150 = 26.77. + Vocab Alignment,  = Improve. + Vocab Alignment, CityScapes = +1.09. + Vocab Alignment,  = +0.38. + Vocab Alignment,  = +0.18. + TopK Improve (%), CityScapes = 49.58 +2.02. + TopK Improve (%), PC-59 = 57.01 +1.49. + TopK Improve (%), ADE20k-150 = 27.39 +0.51. + TopK Improve (%),  = Zero-Shot. + TopK Improve (%), CityScapes = . + TopK Improve (%),  = . + TopK Improve (%),  =HEADINGS:
+# 4.2 Main Results
+CONTENT:
+Figure 5: Ablation study on ADE20k-150 - impact of the number of classes in Top-K. We vary the number of classes selected by the Top-K method.
+and the use of a lower number of iterations for all datasets. The method was also applied to the full CAT-Seg model (right), where we continue to exhibit moderate adaptability. The reason for the lower evaluation score is likely due to the low Top-K selection value, constrained by our memory restrictions - a single 64GB A100 GPU.
+Comparison to other methods. To our knowledge, there are no prior works covering SFDA on open-vocabulary semantic segmentation models. As such, we implement a simple baseline utilizing the minimization of entropy as the training objective. This objective makes it possible to adapt the CAT-Seg model in a source-free manner. The results of this method can be viewed in Table 2. The entropy minimization objective can adapt the CAT-Seg model, although only to a limited degree in comparison to VocAlign.HEADINGS:
+# 4.3 Analysis and Ablations
+CONTENT:
+Model component analysis. Table 2 (left) shows the effectiveness of each model component. The baseline Teacher-Student setup performs poorly and fails to meaningfully adapt the model to any of the datasets. Adding masking to the model significantly improves upon the baseline, yet the increase over CAT-Seg is only moderate or inexistent, depending on the dataset. Our vocabulary alignment method is capable of significantly adapting the model on CityScapes and PASCAL-Context 59, however, we notice a decrease in performance with respect to the use of masking alone on ADE20K-150. This could be caused by the large amount of classes in the dataset, making it hard to find suitable concepts. Finally, incorporating the Top-K method moderately improves the performance of the model on any dataset.
+Figure 6: Ablation study on ADE20k-150 - Top-K selection vs random selection. We replace a fraction of Top-K classes with randomly sampled ones.HEADINGS:
+# 4.3 Analysis and Ablations
+CONTENT:
+Final model performance. Table 2 (right) demonstrates that our method can be applied to the full CAT-Seg model utilizing all 80 prompt templates. However, due to the higher memory requirements, a lower Top-K value of 35 was chosen to fit a single GPU. This results in a more moderate performance increase. Nevertheless, we still recognize a strong improvement on CityScapes and modest improvements for PC-59 and ADE20k-150 compared to the zero-shot setting.
+Impact of Top-K selection. Figures 5 and 6 proves the effects of Top-K selection on ADE20k-150. Top-K was initially implemented as a cost-saving method - as highlighted by the green curve in Figure 5. However, this ablation also unveils that it results in a moderate performance gain - see red curve. Moreover, we show in Figure 6 how replacing a portion of the Top-K selected classes with random ones yields worse performance, confirming that Top-K selection is strictly better than picking classes randomly. The increase in performance by using Top-K implies that the most relevant classes receive relatively stronger gradients, whereas the pruned classes do not receive wrong supervision.HEADINGS:
+# 5 Conclusions
+CONTENT:
+We introduced VocAlign, the first-ever SFDA method for open-vocabulary semantic segmentation models. This is done through a vocabulary alignment strategy for pseudo-labels generation, a Top-K classes selection mechanism on the student model to decrease memory requirements, and a clever use of LoRAs. Our method shows great results on CityScapes, which we consider our main benchmark since it is one of the most used datasets in UDA. Moreover, we show promising results on other open-vocabulary datasets, with which we demonstrate addressing issues related to the nature of VLMs. This work opens the path for more research on this topic, which could become even more relevant in the future.
+Acknowledgment. We acknowledge the European High Performance Computing Joint Undertaking (EuroHPC JU), EuroCC National Competence Center Sweden (ENCCS) and the CINECA award under the ISCRA initiative for the availability of high-performance computing resources and support.HEADINGS:
+# References
+CONTENT:
+- [1] Nikita Araslanov and Stefan Roth. Self-supervised augmentation consistency for adapting semantic segmentation. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 15384-15394, 2021.
+- [2] Holger Caesar, Jasper Uijlings, and Vittorio Ferrari. Coco-stuff: Thing and stuff classes in context. In Proceedings of the IEEE conference on computer vision and pattern recognition , pages 1209-1218, 2018.
+- [3] Minghao Chen, Hongyang Xue, and Deng Cai. Domain adaptation for semantic segmentation with maximum squares loss. In Proceedings of the IEEE/CVF international conference on computer vision , pages 2090-2099, 2019.
+- [4] Mu Chen, Zhedong Zheng, Yi Yang, and Tat-Seng Chua. Pipa: Pixel-and patch-wise self-supervised learning for domain adaptative semantic segmentation. In Proceedings of the 31st ACM International Conference on Multimedia , pages 1905-1914, 2023.
+- [5] Yuhua Chen, Wen Li, Christos Sakaridis, Dengxin Dai, and Luc Van Gool. Domain adaptive faster r-cnn for object detection in the wild. In Proceedings of the IEEE conference on computer vision and pattern recognition , pages 3339-3348, 2018.
+- [6] Yuhua Chen, Haoran Wang, Wen Li, Christos Sakaridis, Dengxin Dai, and Luc Van Gool. Scale-aware domain adaptive faster r-cnn. International Journal of Computer Vision , 129(7):2223-2243, 2021.
+- [7] Seokju Cho, Heeseong Shin, Sunghwan Hong, Seungjun An, Seungjun Lee, Anurag Arnab, Paul Hongsuck Seo, and Seungryong Kim. Cat-seg: Cost aggregation for openvocabulary semantic segmentation. arXiv preprint arXiv:2303.11797 , 2023.
+- [8] Seun-An Choe, Ah-Hyung Shin, Keon-Hee Park, Jinwoo Choi, and Gyeong-Moon Park. Open-set domain adaptation for semantic segmentation. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 2394323953, 2024.
+- [9] Sanjoy Chowdhury, Sayan Nag, and Dinesh Manocha. Apollo: Unified adapter and prompt learning for vision language models. In Proceedings of the 2023 Conference on Empirical Methods in Natural Language Processing , pages 10173-10187, 2023.
+- [10] MMSegmentation Contributors. Mmsegmentation: Openmmlab semantic segmentation toolbox and benchmark, 2020.
+- [11] Yulu Gan, Yan Bai, Yihang Lou, Xianzheng Ma, Renrui Zhang, Nian Shi, and Lin Luo. Decorate the newcomers: Visual domain prompt for continual test time adaptation. In Proceedings of the AAAI Conference on Artificial Intelligence , volume 37, pages 7595-7603, 2023.
+- [12] Yaroslav Ganin, Evgeniya Ustinova, Hana Ajakan, Pascal Germain, Hugo Larochelle, François Laviolette, Mario Marchand, and Victor Lempitsky. Domain-adversarial training of neural networks. The Journal of Machine Learning Research , 17(1):2096-2030, 2016.HEADINGS:
+# References
+CONTENT:
+- [13] Peng Gao, Shijie Geng, Renrui Zhang, Teli Ma, Rongyao Fang, Yongfeng Zhang, Hongsheng Li, and Yu Qiao. Clip-adapter: Better vision-language models with feature adapters. International Journal of Computer Vision , 132(2):581-595, 2024.
+- [14] Yunhe Gao, Xingjian Shi, Yi Zhu, Hao Wang, Zhiqiang Tang, Xiong Zhou, Mu Li, and Dimitris N Metaxas. Visual prompt tuning for test-time domain adaptation. arXiv preprint arXiv:2210.04831 , 2022.
+- [15] Xiuye Gu, Tsung-Yi Lin, Weicheng Kuo, and Yin Cui. Open-vocabulary object detection via vision and language knowledge distillation. arXiv preprint arXiv:2104.13921 , 2021.
+- [16] Judy Hoffman, Dequan Wang, Fisher Yu, and Trevor Darrell. Fcns in the wild: Pixellevel adversarial and constraint-based adaptation. arXiv preprint arXiv:1612.02649 , 2016.
+- [17] Neil Houlsby, Andrei Giurgiu, Stanislaw Jastrzebski, Bruna Morrone, Quentin De Laroussilhe, Andrea Gesmundo, Mona Attariyan, and Sylvain Gelly. Parameterefficient transfer learning for nlp. In International conference on machine learning , pages 2790-2799. PMLR, 2019.
+- [18] Lukas Hoyer, Dengxin Dai, and Luc Van Gool. Daformer: Improving network architectures and training strategies for domain-adaptive semantic segmentation. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 9924-9935, 2022.
+- [19] Lukas Hoyer, Dengxin Dai, and Luc Van Gool. Hrda: Context-aware high-resolution domain-adaptive semantic segmentation. In European Conference on Computer Vision (ECCV) , 2022.
+- [20] Lukas Hoyer, Dengxin Dai, Haoran Wang, and Luc Van Gool. Mic: Masked image consistency for context-enhanced domain adaptation. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 11721-11732, 2023.
+- [21] Edward J Hu, Yelong Shen, Phillip Wallis, Zeyuan Allen-Zhu, Yuanzhi Li, Shean Wang, Lu Wang, and Weizhu Chen. Lora: Low-rank adaptation of large language models. arXiv preprint arXiv:2106.09685 , 2021.
+- [22] Chengsong Huang, Qian Liu, Bill Yuchen Lin, Tianyu Pang, Chao Du, and Min Lin. Lorahub: Efficient cross-task generalization via dynamic lora composition. arXiv preprint arXiv:2307.13269 , 2023.
+- [23] Muhammad Gul Zain Ali Khan, Muhammad Ferjad Naeem, Luc Van Gool, Didier Stricker, Federico Tombari, and Muhammad Zeshan Afzal. Introducing language guidance in prompt-based continual learning. In Proceedings of the IEEE/CVF International Conference on Computer Vision , pages 11463-11473, 2023.
+- [24] Jogendra Nath Kundu, Akshay Kulkarni, Amit Singh, Varun Jampani, and R Venkatesh Babu. Generalize then adapt: Source-free domain adaptive semantic segmentation. In Proceedings of the IEEE/CVF International Conference on Computer Vision , pages 7046-7056, 2021.HEADINGS:
+# References
+CONTENT:
+- [25] Brian Lester, Rami Al-Rfou, and Noah Constant. The power of scale for parameterefficient prompt tuning. arXiv preprint arXiv:2104.08691 , 2021.
+- [26] Boyi Li, Kilian Q Weinberger, Serge Belongie, Vladlen Koltun, and René Ranftl. Language-driven semantic segmentation. arXiv preprint arXiv:2201.03546 , 2022.
+- [27] Xiang Lisa Li and Percy Liang. Prefix-tuning: Optimizing continuous prompts for generation. arXiv preprint arXiv:2101.00190 , 2021.
+- [28] Yu-Jhe Li, Xiaoliang Dai, Chih-Yao Ma, Yen-Cheng Liu, Kan Chen, Bichen Wu, Zijian He, Kris Kitani, and Peter Vajda. Cross-domain adaptive teacher for object detection. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 7581-7590, 2022.
+- [29] Feng Liang, Bichen Wu, Xiaoliang Dai, Kunpeng Li, Yinan Zhao, Hang Zhang, Peizhao Zhang, Peter Vajda, and Diana Marculescu. Open-vocabulary semantic segmentation with mask-adapted clip. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 7061-7070, 2023.
+- [30] Yuang Liu, Wei Zhang, and Jun Wang. Source-free domain adaptation for semantic segmentation. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 1215-1224, 2021.
+- [31] Mingsheng Long, Yue Cao, Jianmin Wang, and Michael Jordan. Learning transferable features with deep adaptation networks. In International conference on machine learning , pages 97-105. PMLR, 2015.
+- [32] Mingsheng Long, Zhangjie Cao, Jianmin Wang, and Michael I Jordan. Conditional adversarial domain adaptation. Advances in neural information processing systems , 31, 2018.
+- [33] Ilya Loshchilov and Frank Hutter. Decoupled weight decay regularization. arXiv preprint arXiv:1711.05101 , 2017.
+- [34] Roozbeh Mottaghi, Xianjie Chen, Xiaobai Liu, Nam-Gyu Cho, Seong-Whan Lee, Sanja Fidler, Raquel Urtasun, and Alan Yuille. The role of context for object detection and semantic segmentation in the wild. In Proceedings of the IEEE conference on computer vision and pattern recognition , pages 891-898, 2014.
+- [35] Muhammad Ferjad Naeem, Yongqin Xian, Xiaohua Zhai, Lukas Hoyer, Luc Van Gool, and Federico Tombari. Silc: Improving vision language pretraining with selfdistillation. In European Conference on Computer Vision , pages 38-55. Springer, 2025.
+- [36] Jonas Pfeiffer, Aishwarya Kamath, Andreas Rücklé, Kyunghyun Cho, and Iryna Gurevych. Adapterfusion: Non-destructive task composition for transfer learning. arXiv preprint arXiv:2005.00247 , 2020.
+- [37] Alec Radford, Jong Wook Kim, Chris Hallacy, Aditya Ramesh, Gabriel Goh, Sandhini Agarwal, Girish Sastry, Amanda Askell, Pamela Mishkin, Jack Clark, et al. Learning transferable visual models from natural language supervision. In International conference on machine learning , pages 8748-8763. PMLR, 2021.HEADINGS:
+# References
+CONTENT:
+- [38] Ignacio Rocco, Relja Arandjelovic, and Josef Sivic. Convolutional neural network architecture for geometric matching. In Proceedings of the IEEE conference on computer vision and pattern recognition , pages 6148-6157, 2017.
+- [39] Kuniaki Saito, Yoshitaka Ushiku, Tatsuya Harada, and Kate Saenko. Strong-weak distribution alignment for adaptive object detection. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 6956-6965, 2019.
+- [40] Jameel Hassan Abdul Samadh, Hanan Gani, Noor Hazim Hussein, Muhammad Uzair Khattak, Muzammal Naseer, Fahad Khan, and Salman Khan. Align your prompts: Test-time prompting with distribution alignment for zero-shot generalization. In Thirtyseventh Conference on Neural Information Processing Systems , 2023.
+- [41] Baochen Sun and Kate Saenko. Deep coral: Correlation alignment for deep domain adaptation. In Computer Vision-ECCV 2016 Workshops: Amsterdam, The Netherlands, October 8-10 and 15-16, 2016, Proceedings, Part III 14 , pages 443-450. Springer, 2016.
+- [42] Antti Tarvainen and Harri Valpola. Mean teachers are better role models: Weightaveraged consistency targets improve semi-supervised deep learning results. Advances in neural information processing systems , 30, 2017.
+- [43] Can Wang, Menglei Chai, Mingming He, Dongdong Chen, and Jing Liao. Clip-nerf: Text-and-image driven manipulation of neural radiance fields. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 38353844, 2022.
+- [44] Dequan Wang, Evan Shelhamer, Shaoteng Liu, Bruno Olshausen, and Trevor Darrell. Tent: Fully test-time adaptation by entropy minimization. In International Conference on Learning Representations , 2021.
+- [45] Mei Wang and Weihong Deng. Deep visual domain adaptation: A survey. Neurocomputing , 312:135-153, 2018.
+- [46] Qin Wang, Dengxin Dai, Lukas Hoyer, Luc Van Gool, and Olga Fink. Domain adaptive semantic segmentation with self-supervised depth estimation. In Proceedings of the IEEE/CVF International Conference on Computer Vision , pages 8515-8525, 2021.
+- [47] Qin Wang, Olga Fink, Luc Van Gool, and Dengxin Dai. Continual test-time domain adaptation, 2022.
+- [48] Size Wu, Wenwei Zhang, Lumin Xu, Sheng Jin, Xiangtai Li, Wentao Liu, and Chen Change Loy. Clipself: Vision transformer distills itself for open-vocabulary dense prediction. arXiv preprint arXiv:2310.01403 , 2023.
+- [49] Bin Xie, Jiale Cao, Jin Xie, Fahad Shahbaz Khan, and Yanwei Pang. Sed: A simple encoder-decoder for open-vocabulary semantic segmentation. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2024.
+- [50] Binhui Xie, Shuang Li, Mingjia Li, Chi Harold Liu, Gao Huang, and Guoren Wang. Sepico: Semantic-guided pixel contrast for domain adaptive semantic segmentation. IEEE Transactions on Pattern Analysis and Machine Intelligence , 45(7):9004-9021, 2023.HEADINGS:
+# References
+CONTENT:
+- [51] Mengde Xu, Zheng Zhang, Fangyun Wei, Han Hu, and Xiang Bai. Side adapter network for open-vocabulary semantic segmentation. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 2945-2954, 2023.
+- [52] Linyan Yang, Lukas Hoyer, Mark Weber, Tobias Fischer, Dengxin Dai, Laura LealTaixé, Marc Pollefeys, Daniel Cremers, and Luc Van Gool. Micdrop: masking image and depth features via complementary dropout for domain-adaptive semantic segmentation. In European Conference on Computer Vision , pages 329-346. Springer, 2025.
+- [53] Qingru Zhang, Minshuo Chen, Alexander Bukharin, Pengcheng He, Yu Cheng, Weizhu Chen, and Tuo Zhao. Adaptive budget allocation for parameter-efficient fine-tuning. In The Eleventh International Conference on Learning Representations , 2023.
+- [54] Bolei Zhou, Hang Zhao, Xavier Puig, Tete Xiao, Sanja Fidler, Adela Barriuso, and Antonio Torralba. Semantic understanding of scenes through the ade20k dataset. International Journal of Computer Vision , 127:302-321, 2019.
+- [55] Chong Zhou, Chen Change Loy, and Bo Dai. Extract free dense labels from clip. In European Conference on Computer Vision , pages 696-712. Springer, 2022.
+- [56] Jinghao Zhou, Li Dong, Zhe Gan, Lijuan Wang, and Furu Wei. Non-contrastive learning meets language-image pre-training. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 11028-11038, 2023.
+- [57] Kaiyang Zhou, Jingkang Yang, Chen Change Loy, and Ziwei Liu. Conditional prompt learning for vision-language models. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 16816-16825, 2022.
+- [58] Kaiyang Zhou, Jingkang Yang, Chen Change Loy, and Ziwei Liu. Learning to prompt for vision-language models. International Journal of Computer Vision , 130(9):23372348, 2022.
+- [59] Ziqin Zhou, Yinjie Lei, Bowen Zhang, Lingqiao Liu, and Yifan Liu. Zegclip: Towards adapting clip for zero-shot semantic segmentation. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 11175-11185, 2023.
+- [60] Yang Zou, Zhiding Yu, BVK Kumar, and Jinsong Wang. Unsupervised domain adaptation for semantic segmentation via class-balanced self-training. In Proceedings of the European conference on computer vision (ECCV) , pages 289-305, 2018.HEADINGS:
+# Lost in Translation? Vocabulary Alignment for Source-Free Domain Adaptation in Open-Vocabulary Semantic Segmentation Supplementary Material
+CONTENT:
+Silvio Mazzucco 1,2*
+silvio.mazzucco@thegoodailab.org
+Carl Persson 1*
+carl.persson@thegoodailab.org
+Mattia Segu 1,2,3
+mattia.segu@thegoodailab.org
+Pier Luigi Dovesi 1
+pier@thegoodailab.org
+Federico Tombari 3,4
+tombari@google.com
+Luc Van Gool 5
+vangool@vision.ee.ethz.ch
+Matteo Poggi 1,6
+m.poggi@unibo.itHEADINGS:
+# Introduction
+CONTENT:
+This document provides supplementary material for BMVC paper 'Lost in Translation? Vocabulary Alignment for Source-Free Adaptation in Open-Vocabulary Semantic Segmentation." The supplementary content elaborates on key aspects of the work, addressing implementation details, detailed analyses, and additional results.
+Specifically, this document includes:
+- ChatGPT Prompts and Concept Augmentation: Insights into the prompt engineering process and examples of how generated concepts enhance model performance.
+- Analysis of Ego-Vehicle Faulty Segmentation: Examination of common segmentation errors, particularly for ego-vehicle-related regions, and the applied solutions.
+- Class-by-Class Analysis: Detailed per-class performance evaluation across multiple datasets, highlighting areas of significant improvement.
+- Qualitative Results: Visual comparisons illustrating the model's improvements in segmentation quality on various datasets.
+©2025. The copyright of this document resides with its authors.
+It may be distributed unchanged freely in print or electronic forms.
+- 1 The Good AI Lab thegoodailab.org
+2 ETH Zurich
+- 3 Google
+- 4 Technical University of Munich
+- 5 INSAIT, Sofia University, St. Kliment Ohridski
+- 6 University of Bologna
+* joint first authorshipHEADINGS:
+# ChatGPT o1 Prompt
+CONTENT:
+Context: An open vocabulary semantic segmentation model was trained on a dataset with a set amount of labels. The model is based on CLIP, which makes it possible to extend this model to other datasets with other labels. However, the labels of the new evaluation dataset might not properly align with the labels used for training. The following task aims to solve this problem through the modification of the labels used for evaluation.
+Task: Given a list of training labels and a list of evaluation labels, the objective is to find a good mapping of training labels to the evaluation labels. Multiple training labels can be mapped to the same evaluation label, but one training label can not appear more than once.
+If the evaluation label does not have an exact match, then map two more synonyms, chosen freely, beyond the already mapped training labels. Also modify the evaluation label to align with the description if necessary.
+Evaluation labels (with descriptions):
+...
+Training labels (with descriptions):
+...HEADINGS:
+# Follow-up ChatGPT o1 Prompt
+CONTENT:
+For all evaluation labels, find a synonym and add it to the list. The synonym does not have to be from any previous list and can be chosen completely freely.
+Figure 1: Initial and Follow-up prompts used in ChatGPT o1.HEADINGS:
+# 1 ChatGPT Prompts and Concept Augmentation
+CONTENT:
+In this section, we describe how we obtain augmented concepts to enhance teacher performance during adaptation.HEADINGS:
+# 1.1 Prompt Design
+CONTENT:
+To automatize the generation of augmented concepts, we interact with ChatGPT o1 making it responsible of the concepts generation process. To generate favourable concepts we feed ChatGPT with the following information: the context of the task with its corresponding restrictions, as well as information on the target labels and the source training labels. The task consists of finding a good mapping from training labels to the target labels. If this mapping does not exist, ChatGPT is asked to generate synonyms instead.
+We also found that the descriptions of the labels in the evaluation datasets did not align well with the visual semantics of such labels. In this case, we also ask ChatGPT to find a suitable replacement label that aligns better with the label description. In practice, this was seldom the case but helped in certain edge case scenarios. We found that this prompt could generate satisfactory concepts for all datasets. However, for larger datasets, the amounts of synonyms to generate was changed to satisfy computational restrictions, but only slightHEADINGS:
+# 1.1 Prompt Design
+CONTENT:
+Table 1: ChatGPT Concepts. List of the original classes and the additional concepts generated by ChatGPT o1 for CityScapes.
+
+road sidewalk building wall fence pole traffic light, ChatGPT Concepts = street pavement, floor-stone, floor-tile, footpath building-other, house, skyscraper, structure wall-other, solid-other, structural-other, barrier railing, enclosure light, metal, post signal. road sidewalk building wall fence pole traffic light,  = street pavement, floor-stone, floor-tile, footpath building-other, house, skyscraper, structure wall-other, solid-other, structural-other, barrier railing, enclosure light, metal, post signal. Original Classes ChatGPT Concepts, ChatGPT Concepts = Original Classes ChatGPT Concepts. Original Classes ChatGPT Concepts,  = Original Classes ChatGPT Concepts. traffic sign stop sign, parking meter, banner, signboard vegetation tree, bush, plant-other, foliage terrain grass, ground-other, dirt, landscape sky sky-other, heavens person human rider horse, skateboard, cyclist car automobile, ChatGPT Concepts = traffic sign stop sign, parking meter, banner, signboard vegetation tree, bush, plant-other, foliage terrain grass, ground-other, dirt, landscape sky sky-other, heavens person human rider horse, skateboard, cyclist car automobile. traffic sign stop sign, parking meter, banner, signboard vegetation tree, bush, plant-other, foliage terrain grass, ground-other, dirt, landscape sky sky-other, heavens person human rider horse, skateboard, cyclist car automobile,  = traffic sign stop sign, parking meter, banner, signboard vegetation tree, bush, plant-other, foliage terrain grass, ground-other, dirt, landscape sky sky-other, heavens person human rider horse, skateboard, cyclist car automobile. , ChatGPT Concepts = Original Classes ChatGPT. ,  = Concepts. , ChatGPT Concepts = truck bus train motorcycle bicycle bike. ,  = lorry coach locomotive motorbikeHEADINGS:
+# 1.1 Prompt Design
+CONTENT:
+Table 2: Per-class results on CityScapes. We compare our proposed method to the initial Zero-Shot predictions by CAT-Seg.
+
+Zero-Shot, road swalk build. = 86.03 48.58 81.79. Zero-Shot, wall = 9.77. Zero-Shot, fence = 38.37. Zero-Shot, pole = 27.47. Zero-Shot, tlight = 46.09. Zero-Shot, sign veg. terrain = 50.05 84.08. Zero-Shot, sky person = 0.02 81.69. Zero-Shot, rider = 68.08 0.05. Zero-Shot, car truck = 76.38. Zero-Shot,  = 23.22. Zero-Shot, bus = 49.18. Zero-Shot,  = 7.12. Zero-Shot, train mbike bike mIoU = 55.35 70.23 47.56. Ours, road swalk build. = 84.87 50.70 -1.16 +2.12. Ours, wall = 84.90 +3.11 +24.55. Ours, fence = 34.32 31.70 -6.67. Ours, pole = 37.71 +10.24. Ours, tlight = 47.59 +1.50. Ours, sign veg. terrain = 49.65 87.12 -0.40 +3.04. Ours, sky person = 45.95 88.70 +45.93 +7.01. Ours, rider = 69.06 +0.98 -0.05. Ours, car truck = 0.00 67.48 -8.9. Ours,  = 46.76 +23.54. Ours, bus = 52.35. Ours,  = 16.28 +3.17 +9.16. Ours, train mbike bike mIoU = 54.83 69.72 53.67 -0.52 -0.51 +6.11HEADINGS:
+# 1.1 Prompt Design
+CONTENT:
+variations to the prompt were made.HEADINGS:
+# 1.2 Examples of Augmented Concepts
+CONTENT:
+By exploiting the prompts introduced before, we can generate augmented concepts related to any of the semantic classes in a dataset. In Table 1, we show some examples of concepts generated by ChatGPT o1 specifically for the original semantic classes in the CityScapes dataset.HEADINGS:
+# 2 Ego-Vehicle Faulty Segmentation
+CONTENT:
+For the sake of completeness, in Table 2 we report the results concerning all of the single classes on CityScapes. As mentioned in the main paper, we observe a weird worsening of the performance on the class car in the CityScapes results. We assume that this mainly
+Table 3: Per-class results on CityScapes when cropping. We compare our proposed method to the initial Zero-Shot predictions by CAT-Seg when cropping the images to get rid of the ego-vehicle during evaluation.
+Table 4: Per-class results on PASCAL-Context 59. We compare our proposed method to the Zero-Shot predictions by CAT-Seg.HEADINGS:
+# 2 Ego-Vehicle Faulty Segmentation
+CONTENT:
+Zero-Shot, plane = 88.82. Zero-Shot, bag = 43.08. Zero-Shot, bed = 25.47. Zero-Shot, bedcloth. = 40.42. Zero-Shot, bench = 26.78. Zero-Shot,  = 76.64. Zero-Shot, bike = . Zero-Shot, bird = 90.35. Zero-Shot, boat = 76.47. Zero-Shot, book = 52.54. Zero-Shot, bottle = 79.49. Zero-Shot, build = 42.19. Zero-Shot, bus = 94.24. Zero-Shot, cabinet = 42.32. Zero-Shot, car = 74.69. Zero-Shot, cat = 91.21. Zero-Shot, ceil. = 52.76. Zero-Shot, chair = 56.35. Zero-Shot, cloth computer = 14.00 14.96. Zero-Shot, mIoU = 55.52. Ours, plane = 89.02. Ours, bag = 41.78. Ours, bed = 25.43. Ours, bedcloth. = 42.61. Ours, bench = 27.42. Ours,  = 77.04. Ours, bike = 90.68. Ours, bird = . Ours, boat = 78.66. Ours, book = 56.89. Ours, bottle = 79.68. Ours, build = 39.18. Ours, bus = 94.37. Ours, cabinet = 43.18. Ours, car = 79.08. Ours, cat = 91.90. Ours, ceil. = 50.50. Ours, chair = 47.07. Ours, cloth computer = 19.39 18.25. Ours, mIoU = 57.01. Ours, plane = +0.20. Ours, bag = -1.30. Ours, bed = -0.04. Ours, bedcloth. = +2.19. Ours, bench = +0.64. Ours,  = . Ours, bike = +0.4. Ours, bird = +0.33. Ours, boat = +2.19. Ours, book = +4.35. Ours, bottle = +0.19. Ours, build = -3.01. Ours, bus = +0.13. Ours, cabinet = +0.86. Ours, car = +4.39. Ours, cat = +0.69. Ours, ceil. = -2.26. Ours, chair = -9.28. Ours, cloth computer = +5.39 +3.29. Ours, mIoU = +1.49. Method, plane = cow. Method, bag = cup. Method, bed = curtain. Method, bedcloth. = dog. Method, bench = door. Method,  = fence. Method, bike = floor. Method, bird = flower. Method, boat = food. Method, book = grass. Method, bottle = ground. Method, build = horse. Method, bus = kboard. Method, cabinet = light. Method, car = mbike. Method, cat = mountain. Method, ceil. = mouse. Method, chair = person 87.31. Method, cloth computer = plate. Method, mIoU = pform mIoU. Zero-Shot, plane = 90.19. Zero-Shot, bag = 36.79. Zero-Shot, bed = 56.02. Zero-Shot, bedcloth. = 89.01. Zero-Shot, bench = 25.00. Zero-Shot,  = 40.63. Zero-Shot, bike = 62.16. Zero-Shot, bird = 33.63. Zero-Shot, boat = 39.15. Zero-Shot, book = 79.8. Zero-Shot, bottle = 22.86. Zero-Shot, build = 89.78. Zero-Shot, bus = 82.31. Zero-Shot, cabinet = 46.2. Zero-Shot, car = 87.28. Zero-Shot, cat = 58.64. Zero-Shot, ceil. = 45.3. Zero-Shot, chair = . Zero-Shot, cloth computer = 6.74. Zero-Shot, mIoU = 32.95 55.52. Ours, plane = 90.61. Ours, bag = 36.31. Ours, bed = 55.54. Ours, bedcloth. = 89.67. Ours, bench = 25.01. Ours,  = 40.84. Ours, bike = 66.12. Ours, bird = 21.90. Ours, boat = 44.04. Ours, book = 81.82. Ours, bottle = 40.35. Ours, build = 90.37. Ours, bus = 81.14. Ours, cabinet = 46.93. Ours, car = 88.01. Ours, cat = 59.39. Ours, ceil. = 50.15. Ours, chair = 87.37. Ours, cloth computer = 8.45. Ours, mIoU = 40.63 57.01. Ours, plane = +0.42. Ours, bag = -0.48. Ours, bed = -0.48. Ours, bedcloth. = +0.66. Ours, bench = +0.01. Ours,  = +0.21. Ours, bike = +3.96. Ours, bird = -11.73. Ours, boat = +4.89. Ours, book = +2.02. Ours, bottle = +17.49. Ours, build = +0.59. Ours, bus = -1.17. Ours, cabinet = +0.73. Ours, car = +0.73. Ours, cat = +0.75. Ours, ceil. = +4.85. Ours, chair = +0.06. Ours, cloth computer = +1.71. Ours, mIoU = +7.68 +1.49. Method, plane = plant. Method, bag = road. Method, bed = rock. Method, bedcloth. = sheep. Method, bench = shelves. Method,  = s.walk. Method, bike = sign. Method, bird = sky. Method, boat = snow. Method, book = sofa. Method, bottle = table. Method, build = track. Method, bus = train. Method, cabinet = tree. Method, car = truck. Method, cat = tv. Method, ceil. = wall. Method, chair = water. Method, cloth computer = window. Method, mIoU = wood mIoU. Zero-Shot Ours, plane = 59.91. Zero-Shot Ours, bag = 49.07. Zero-Shot Ours, bed = 47.22. Zero-Shot Ours, bedcloth. = 90.34. Zero-Shot Ours, bench = 28.69. Zero-Shot Ours,  = 13.55. Zero-Shot Ours, bike = 29.21. Zero-Shot Ours, bird = 93.76. Zero-Shot Ours, boat = 74.71. Zero-Shot Ours, book = 45.84. Zero-Shot Ours, bottle = 57.81. Zero-Shot Ours, build = 33.74. Zero-Shot Ours, bus = 83.43. Zero-Shot Ours, cabinet = 78.89. Zero-Shot Ours, car = 11.33. Zero-Shot Ours, cat = 74.55. Zero-Shot Ours, ceil. = 62.84. Zero-Shot Ours, chair = 89.36. Zero-Shot Ours, cloth computer = 39.55. Zero-Shot Ours, mIoU = 17.5 55.52. Zero-Shot Ours, plane = 61.09. Zero-Shot Ours, bag = 50.92. Zero-Shot Ours, bed = 51.61. Zero-Shot Ours, bedcloth. = 90.57. Zero-Shot Ours, bench = 32.13. Zero-Shot Ours,  = 19.28. Zero-Shot Ours, bike = 31.77. Zero-Shot Ours, bird = 93.97. Zero-Shot Ours, boat = 74.11. Zero-Shot Ours, book = 40.04. Zero-Shot Ours, bottle = 56.86. Zero-Shot Ours, build = 52.04. Zero-Shot Ours, bus = 87.90. Zero-Shot Ours, cabinet = 78.46. Zero-Shot Ours, car = 13.91. Zero-Shot Ours, cat = 77.34. Zero-Shot Ours, ceil. = 61.91. Zero-Shot Ours, chair = 90.72. Zero-Shot Ours, cloth computer = 37.91. Zero-Shot Ours, mIoU = 24.14 57.01. Zero-Shot Ours, plane = +1.18. Zero-Shot Ours, bag = +1.85. Zero-Shot Ours, bed = +4.39. Zero-Shot Ours, bedcloth. = +0.23. Zero-Shot Ours, bench = +3.44. Zero-Shot Ours,  = +5.73. Zero-Shot Ours, bike = +2.56. Zero-Shot Ours, bird = +0.21. Zero-Shot Ours, boat = -0.6. Zero-Shot Ours, book = -5.8. Zero-Shot Ours, bottle = -0.95. Zero-Shot Ours, build = +18.3. Zero-Shot Ours, bus = +4.47. Zero-Shot Ours, cabinet = -0.43. Zero-Shot Ours, car = +2.58. Zero-Shot Ours, cat = +2.79. Zero-Shot Ours, ceil. = -0.93. Zero-Shot Ours, chair = +1.36. Zero-Shot Ours, cloth computer = -1.64. Zero-Shot Ours, mIoU = +6.64 +1.49HEADINGS:
+# 2 Ego-Vehicle Faulty Segmentation
+CONTENT:
+Table 5: Top 10 best and worst per-class results on ADE20k We compare our proposed method to the Zero-Shot predictions by CAT-Seg.
+comes from the ego-vehicle, which is present during both training and evaluation. We thus decide to run an evaluation in which we crop out the bottom 23% of the image, ensuring the ego-vehicle is completely removed from every image. We run this evaluation both before and after the adaptation, and collect results in Table 3. We can notice that the ego-vehicle worsens the performance for the class car also for the original Cat-SEG model - since the mIoU already rises from 76.38 (see main paper) to 81.19. Furthermore, by running our adaptation strategy in this setting, our result on this class gets even better, reaching a score of 85.67.HEADINGS:
+# 3 Class-by-Class Analysis
+CONTENT:
+In the main paper, on PASCAL-Context 59 and ADE20k we only reported the mIoU averaged over all semantic classes for the sake of space. Here, we report more detailed results concerning single classes.
+Table 4 collects the mIoU for each single semantic class in PASCAL-Context 59. We can appreciate how the majority of the classes are improved by our method, with only 15 out of the total 59 classes showing some drops.
+Table 5 shows the results concerning the 20 classes for which we had the highest increase/drop in mIoU on ADE20k. We can appreciate how classes such as bus and chand. are largely improved by more than 10%. As a counterpoint, others such as pot and skyscrapers show a similar drop in performance.
+Figure 2: Qualitative results on ADE20K dataset. Starting from the left , we show respectively the ground truth segmentation map, the zero-shot CAT-Seg prediction, and the result after our adaptation process.HEADINGS:
+# 3 Class-by-Class Analysis
+CONTENT:
+Figure 3: Qualitative results on PC-59 dataset. Starting from the left , we show respectively the ground truth segmentation map, the zero-shot CAT-Seg prediction, and the result after our adaptation process.HEADINGS:
+# 4 Qualitative Results
+CONTENT:
+We conclude with some additional qualitative results.
+Figure 2 shows some examples from the ADE20k dataset over three rows, respectively overlayed, from left to right, with ground-truth semantic masks, semantic labels predicted by the original CAT-Seg model, or by the one adapted with our strategy. In the first row, we can appreciate how the adaptation process allows CAT-Seg to fully recover the railing semantic class, which was almost lost by the zero-shot model. In the second example, the original CAT-Seg model wrongly labelled a large portion of the scene as part of the shower class, whereas it can limit such area to the actual shower visible in the image. Finally, in the third example, we can appreciate how CAT-Seg can properly label even very small objects in the scene - such as the light class appearing on the roof, which was completely ignored by the original CAT-Seg weights.
+Figure 2 reports three examples from PASCAL-Context 59. Here, in particular, we can appreciate how the adaptation process allows for recovering large regions of the background, being incorrectly labeled as grass (top) or sidewalk (bottom) by the zero-shot model.
