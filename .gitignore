@@ -1,4 +1,5 @@
 #arxiv_papers.jsonl
 .env
 papers_text
+downloaded_papers
 .gitignore
