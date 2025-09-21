@@ -50,7 +50,7 @@ def extract_keywords_from_prompt(user_prompt: str) -> List[str]:
 
 if __name__ == "__main__":
     # You can change the input prompt here
-    input_prompt = "I need papers on ORB-SLAM3 and real-time object detection with transformers."
+    input_prompt = input("Enter a research paper query prompt: ")
     config_filename = "config.json"
 
     print(f"▶️  Generating keywords from prompt: \"{input_prompt}\"")
