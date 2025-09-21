@@ -5,6 +5,7 @@ import io
 import logging
 import re
 import warnings
+import json
 from collections import defaultdict
 from collections.abc import Callable
 from functools import partial
@@ -371,31 +372,50 @@ class DoclingParser(pw.UDF):
     async def __wrapped__(self, contents: bytes, **kwargs) -> list[tuple[str, dict]]:
         return await self.parse(contents)
 
-# 1. Download the PDF file from a URL
-pdf_id = "2509.15226v1"
-pdf_url = "https://arxiv.org/pdf/" + pdf_id  # Replace with your actual arXiv PDF URL
-response = requests.get(pdf_url)
-if response.status_code == 200:
-    pdf_bytes = response.content
-else:
-    raise Exception(f"Failed to download PDF: {response.status_code}")
+doc_ids = []
+file_path = "arxiv_papers.jsonl"
+try:
+    with open(file_path, 'r') as f:
+        for line in f:
+            try:
+                # Load the JSON object from each line
+                data = json.loads(line)
+                # Get the 'doc_id' and add it to our list
+                if 'doc_id' in data:
+                    doc_ids.append(data['doc_id'])
+            except json.JSONDecodeError:
+                # Skip lines that are not valid JSON
+                print(f"Warning: Could not decode JSON from line: {line.strip()}")
+except FileNotFoundError:
+    print(f"Error: The file '{file_path}' was not found.")
 
-# 2. Initialize your parser (with appropriate options if needed)
-parser = DoclingParser()
+for pdf_id in doc_ids:
 
-# 3. Parse the PDF in an async context
-async def main():
-    results = await parser.parse(pdf_bytes)
-    for text, meta in results:
-        with open("text_files/"+pdf_id+"_Text.txt", "a") as f:
-            f.write(text.strip())
+    # 1. Download the PDF file from a URL
+    pdf_id = "2509.15226v1"
+    pdf_url = "https://arxiv.org/pdf/" + pdf_id  # Replace with your actual arXiv PDF URL
+    response = requests.get(pdf_url)
+    if response.status_code == 200:
+        pdf_bytes = response.content
+    else:
+        raise Exception(f"Failed to download PDF: {response.status_code}")
 
-        # print(meta.keys())
+    # 2. Initialize your parser (with appropriate options if needed)
+    parser = DoclingParser()
 
-        # print(meta['doc_items'])
-        # print(meta['pages'])
-        # break
+    # 3. Parse the PDF in an async context
+    async def main():
+        results = await parser.parse(pdf_bytes)
+        for text, meta in results:
+            with open("papers_text/"+pdf_id+".txt", "a") as f:
+                f.write(text.strip())
 
-    print("")
+            # print(meta.keys())
 
-asyncio.run(main())
+            # print(meta['doc_items'])
+            # print(meta['pages'])
+            # break
+
+        print("")
+
+    asyncio.run(main())
