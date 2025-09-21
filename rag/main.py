@@ -193,7 +193,17 @@ def filter_by_keywords(docs, keywords):
     keywords_lower = [kw.lower() for kw in keywords]
     
     for doc in docs:
-        metadata = doc.metadata
+        # Handle Json objects - metadata is likely stored as a dictionary within the Json object
+        if hasattr(doc, 'metadata'):
+            metadata = doc.metadata
+        else:
+            # If it's a Json object, the metadata might be the entire object or a nested field
+            # Try to access it as a dictionary
+            try:
+                metadata = dict(doc) if hasattr(doc, '__iter__') and not isinstance(doc, str) else {}
+            except:
+                metadata = {}
+        
         # Create searchable text from multiple fields
         searchable_text = " ".join([
             str(metadata.get("title", "")),
@@ -218,14 +228,25 @@ def format_document(doc):
     """
     Format a document for output
     """
+    # Handle Json objects - metadata is likely stored as a dictionary within the Json object
+    if hasattr(doc, 'metadata'):
+        metadata = doc.metadata
+    else:
+        # If it's a Json object, the metadata might be the entire object or a nested field
+        # Try to access it as a dictionary
+        try:
+            metadata = dict(doc) if hasattr(doc, '__iter__') and not isinstance(doc, str) else {}
+        except:
+            metadata = {}
+    
     return {
-        "id": doc.metadata.get("id", "unknown"),
-        "title": doc.metadata.get("title", ""),
-        "abstract": doc.metadata.get("abstract", ""),
-        "authors": doc.metadata.get("authors", []),
+        "id": metadata.get("id", "unknown"),
+        "title": metadata.get("title", ""),
+        "abstract": metadata.get("abstract", ""),
+        "authors": metadata.get("authors", []),
         "similarity_score": getattr(doc, 'score', 0.0),
-        "url": doc.metadata.get("url", ""),
-        "primary_category": doc.metadata.get("primary_category", ""),
+        "url": metadata.get("url", ""),
+        "primary_category": metadata.get("primary_category", ""),
         "matched_keywords": []
     }
 
