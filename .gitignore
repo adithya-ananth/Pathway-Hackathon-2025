@@ -332,3 +332,4 @@ benchmark_results/
 # Miscellaneous
 RAG_IMPLEMENTATION_SUMMARY.md
 query_results.jsonl
+rag/main_backup.py
