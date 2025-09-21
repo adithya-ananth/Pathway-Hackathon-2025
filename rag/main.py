@@ -1,6 +1,9 @@
 import pathway as pw
+import pathway as pw
 from pathway.xpacks.llm import embedders
 from pathway.xpacks.llm.vector_store import VectorStoreServer
+import os
+import json
 import time
 import json
 import os
@@ -110,17 +113,18 @@ def setup_dynamic_content_pipeline():
 
 def setup_dynamic_query_pipeline():
     """
-    Setup dynamic query processing - queries come in real-time
+    Setup dynamic query processing - queries come in real-time from other team
+    They provide query + keywords and expect results or "no results found"
     """
     try:
         query_stream = pw.io.jsonlines.read(
             "./query_stream/",
             schema=QuerySchema, 
             mode="streaming",
-            autocommit_duration_ms=500  # Faster query processing
+            autocommit_duration_ms=500  # Fast processing for real-time queries
         )
     except:
-        # Fallback to debug table if streaming fails
+        # Fallback to sample queries for testing
         query_rows = [
             {"query": "machine learning healthcare", "top_k": 3, "keywords": ["healthcare", "medical", "nlp"]},
             {"query": "deep learning medical images", "top_k": 2, "keywords": ["deep learning", "medical", "image"]},
@@ -179,6 +183,7 @@ def query_rag_pipeline(vector_store, query_table: pw.Table[QuerySchema]):
 def filter_by_keywords(docs, keywords):
     """
     Filter documents based on keywords presence in metadata fields
+    Returns empty list if no matches (indicating "no results found")
     """
     if not keywords:
         # Return all results if no keywords specified
@@ -204,6 +209,8 @@ def filter_by_keywords(docs, keywords):
         if matched_keywords:
             filtered_docs.append(format_document_with_keywords(doc, matched_keywords))
     
+    # If no documents match keywords, return empty list
+    # This signals to other team: "no results found" - they should search web
     return filtered_docs
 
 
@@ -281,26 +288,41 @@ def create_sample_data():
 
 def create_rag_system():
     """
-    Complete setup and demonstration of the RAG system
+    Complete setup of the RAG system for the described workflow:
+    1. Other team calls RAG with query + keywords
+    2. If no results -> return "no results found"
+    3. Other team searches web -> adds papers to content_stream
+    4. RAG processes new content -> updates database
+    5. Other team calls RAG again -> gets results
     """
+    print("🔧 Setting up RAG system for dynamic workflow...")
     
-    # Create sample content data
-    sample_data = create_sample_data()
-    
-    # Setup dynamic content pipeline
+    # Setup dynamic content pipeline (monitors content_stream directory)
     content_table = setup_dynamic_content_pipeline()
+    print("✅ Content pipeline ready - monitoring ./content_stream/")
     
-    # Setup vector store
+    # Setup vector store that auto-updates when new content arrives
     vector_store, vector_data = setup_dynamic_rag_pipeline(content_table)
+    print("✅ Vector store ready - will auto-update with new papers")
     
-    # Setup query pipeline
+    # Setup query pipeline (monitors query_stream directory)
     query_table = setup_dynamic_query_pipeline()
+    print("✅ Query pipeline ready - monitoring ./query_stream/")
     
-    # Execute queries
+    # Execute queries with keyword filtering
     results = query_rag_pipeline(vector_store, query_table)
     
-    # Write results to JSONL file
+    # Stream results to output (other team can monitor this)
     pw.io.jsonlines.write(results, "./query_results.jsonl")
+    print("✅ Results will be written to ./query_results.jsonl")
+    
+    print("\n📋 Workflow Summary:")
+    print("   1. Other team drops query.jsonl in ./query_stream/")
+    print("   2. RAG processes query with keywords")
+    print("   3. If no results found -> empty list returned")
+    print("   4. Other team searches web -> drops papers in ./content_stream/")
+    print("   5. RAG auto-updates database with new papers")
+    print("   6. Other team queries again -> gets results")
     
     return vector_store, results
 
@@ -666,4 +688,31 @@ def demonstrate_enhanced_rag():
 
 
 if __name__ == "__main__":
-    demonstrate_enhanced_rag()
+    """
+    Main execution - sets up the RAG pipeline for the workflow:
+    1. Other team generates keywords from query (blackbox)
+    2. Other team calls RAG with query + keywords  
+    3. If no results -> return empty (they search web)
+    4. They add papers to content_stream -> RAG updates
+    5. They call RAG again -> get results
+    """
+    print("=== Dynamic RAG Pipeline for Team Integration ===\n")
+    
+    # Setup the complete RAG system
+    vector_store, results = create_rag_system()
+    
+    print("\n🚀 Running RAG pipeline...")
+    print("   - Monitoring content_stream for new papers")
+    print("   - Monitoring query_stream for queries")
+    print("   - Writing results to query_results.jsonl")
+    
+    # Run the pipeline with minimal monitoring
+    pw.run(monitoring_level=pw.MonitoringLevel.NONE)
+    
+    print("\n✅ RAG Pipeline is running!")
+    print("📁 Directories created:")
+    print("   ./content_stream/ - Other team adds papers here")
+    print("   ./query_stream/ - Other team adds queries here") 
+    print("   ./query_results.jsonl - Results appear here")
+    
+    print("\n🔄 Workflow ready for other team integration!")
