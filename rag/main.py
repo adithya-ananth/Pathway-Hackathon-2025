@@ -22,9 +22,7 @@ def read_text_from_file(file_path: str) -> str:
     """Read UTF-8 text from a local .txt file path (absolute or project-relative)."""
     resolved_path = _resolve_project_path(file_path)
     with open(resolved_path, "r", encoding="utf-8") as f:
-        read_data = f.read()
-        print("READ DATA: ", read_data[:50])
-        return read_data
+        return f.read()
 
 class ContentSchema(pw.Schema):
     # Match content_stream/complete_papers_data.jsonl exactly
@@ -466,9 +464,6 @@ def _extract_score_from_result(doc) -> float:
         if hasattr(doc, 'value'):
             doc_data = getattr(doc, 'value')
             if isinstance(doc_data, dict):
-                print(f"🔧 DEBUG: Searching for score in document data keys: {list(doc_data.keys())}")
-                
-                # Look for score-related fields in the document data
                 for score_key in ['similarity_score', 'score', 'relevance_score', 'dist', 'distance']:
                     if score_key in doc_data and doc_data[score_key] is not None:
                         score_value = doc_data[score_key]
@@ -525,8 +520,7 @@ def _extract_score_from_result(doc) -> float:
     print(f"🔧 WARNING: Returning default score 0.0 for {type(doc)}")
     return 0.0
 
-# Simple on-disk cache to support fallback keyword matching when retrieval results lack metadata
-_VECTOR_CACHE_FILE = "./.vector_data_cache.jsonl"
+# (Removed vector cache/fallbacks)
 
 def format_document(doc):
     """Format a document for output using extracted metadata and score.
@@ -538,14 +532,10 @@ def format_document(doc):
     metadata = _extract_metadata_from_result(doc)
     print(f"🔧 DEBUG: format_document extracted metadata: {list(metadata.keys()) if metadata else 'None'}")
     
-    # Debug: Print the actual document structure once for troubleshooting
+    # Minimal one-time debug without leaking full text
     if not hasattr(format_document, '_debug_printed'):
         format_document._debug_printed = True
-        print(f"🔧 DEBUG: Document type: {type(doc)}")
-        print(f"🔧 DEBUG: Document attributes: {dir(doc) if hasattr(doc, '__dict__') else 'N/A'}")
-        if hasattr(doc, '__dict__'):
-            print(f"🔧 DEBUG: Document dict: {doc.__dict__}")
-        print(f"🔧 DEBUG: Extracted metadata: {metadata}")
+        print(f"🔧 DEBUG: Formatting documents (type: {type(doc)})")
     
     # Extract score - also debug this
     score = _extract_score_from_result(doc)
@@ -553,7 +543,7 @@ def format_document(doc):
     
     # Build the formatted document with fallbacks
     formatted = {
-        "id": metadata.get("id") or metadata.get("paper_id") or metadata.get("doc_id") or "unknown",
+        "id": metadata.get("id", "unknown"),
         "title": metadata.get("title", ""),
         "abstract": metadata.get("abstract", ""),
         "authors": metadata.get("authors", []),
@@ -618,10 +608,7 @@ def pretty_print_results(original_query: str, results) -> str:
     for i, doc in enumerate(results, start=1):
         title = _safe_get(doc, "title", "")
         score = _safe_get(doc, "similarity_score", 0.0)
-        try:
-            score = float(score) if score is not None else 0.0
-        except Exception:
-            score = 0.0
+        score = float(score) if score is not None else 0.0
         matched = _to_list(_safe_get(doc, "matched_keywords", []))
         doc_id = _safe_get(doc, "id", "")
 
@@ -768,24 +755,11 @@ def create_rag_system():
     )
     pw.io.jsonlines.write(vector_snapshot, "./.vector_data_snapshot.jsonl")
 
-    # Debug: write a simple cache with rich fields to support fallback keyword matching
-    vector_cache = vector_data.select(
-        doc_id=pw.this.doc_id,
-        title=pw.this.title,
-        abstract=pw.this.abstract,
-        authors=pw.this.authors,
-        primary_category=pw.this.primary_category,
-        url=pw.this.url,
-        data=pw.this.data,
-    )
-    pw.io.jsonlines.write(vector_cache, _VECTOR_CACHE_FILE)
+    # (Removed vector cache write; no fallback cache maintained)
 
     # Debug: also materialize raw retrieve counts per query
     def _count_docs(rs: list) -> int:
-        try:
-            return len(rs or [])
-        except Exception:
-            return 0
+        return len(rs or [])
 
     raw = vector_store.retrieve_query(
         query_table.select(
@@ -1017,10 +991,7 @@ def answer_query_with_context(query: str, search_results: list, keywords: list[s
         abstract = str(abstract) if abstract else 'No abstract available'
         
         # Convert score to float if possible
-        try:
-            score = float(score) if score is not None else 0.0
-        except (ValueError, TypeError):
-            score = 0.0
+        score = float(score) if score is not None else 0.0
         
         # Truncate abstract if too long
         if len(abstract) > 300:
