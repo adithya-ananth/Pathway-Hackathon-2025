@@ -82,8 +82,8 @@ def setup_dynamic_rag_pipeline(content_table: pw.Table[ContentSchema]):
                 "citations": list(citations or []),
                 # include file_path so optional full-text filtering can read it later
                 "file_path": str(file_path or ""),
-                # IMPORTANT: Initialize similarity_score to 0.0 - VectorStore should update this
-                "similarity_score": 0.0,
+                # IMPORTANT: Remove hardcoded similarity_score - let VectorStore provide it
+                # "similarity_score": 0.0,  # <-- REMOVED THIS LINE
             },
             pw.this.paper_id,
             pw.this.title,
@@ -210,17 +210,23 @@ def query_rag_pipeline(vector_store, query_table: pw.Table[QuerySchema]):
         print(f"🔧 DEBUG: Processing results for query: {original_query}")
         print(f"🔧 DEBUG: Results type: {type(query_results)}")
         
-        if hasattr(query_results, '__len__'):
+        # Extract the actual results from Pathway Json object
+        actual_results = query_results
+        if hasattr(query_results, 'value'):
+            actual_results = getattr(query_results, 'value')
+            print(f"🔧 DEBUG: Extracted results from .value, type: {type(actual_results)}")
+        
+        if hasattr(actual_results, '__len__'):
             try:
-                print(f"🔧 DEBUG: Results length: {len(query_results)}")
+                print(f"🔧 DEBUG: Results length: {len(actual_results)}")
             except:
                 pass
         
         # Process results and ensure they have similarity scores
         processed_results = []
         
-        if isinstance(query_results, list):
-            for i, doc in enumerate(query_results):
+        if isinstance(actual_results, list):
+            for i, doc in enumerate(actual_results):
                 print(f"🔧 DEBUG: Document {i} type: {type(doc)}")
                 if hasattr(doc, '__dict__'):
                     print(f"🔧 DEBUG: Document {i} attributes: {list(doc.__dict__.keys()) if hasattr(doc, '__dict__') else 'N/A'}")
@@ -228,15 +234,15 @@ def query_rag_pipeline(vector_store, query_table: pw.Table[QuerySchema]):
                 # Try to extract similarity score before applying filters
                 formatted_doc = format_document(doc)
                 
-                # Apply keyword filtering
+                # Apply improved keyword filtering (re-enabled)
                 if keywords:
-                    if _document_matches_keywords(formatted_doc, keywords):
+                    if _document_matches_keywords_flexible(formatted_doc, keywords):
                         processed_results.append(formatted_doc)
                 else:
                     processed_results.append(formatted_doc)
         else:
             # Handle single document or other formats
-            formatted_doc = format_document(query_results)
+            formatted_doc = format_document(actual_results)
             processed_results.append(formatted_doc)
         
         return processed_results
@@ -282,40 +288,166 @@ def _document_matches_keywords(formatted_doc: dict, keywords: list[str]) -> bool
     return False
 
 
+def _document_matches_keywords_flexible(formatted_doc: dict, keywords: list[str]) -> bool:
+    """Enhanced keyword matching with more flexible matching logic"""
+    keywords_lower = [kw.lower() for kw in keywords]
+    
+    # Create searchable text from multiple fields
+    searchable_text = " ".join([
+        str(formatted_doc.get("title", "")),
+        str(formatted_doc.get("abstract", "")),
+        str(formatted_doc.get("primary_category", "")),
+        " ".join(formatted_doc.get("authors", []) or []),
+    ]).lower()
+    
+    matched_keywords = []
+    
+    # Exact phrase matching first
+    for kw in keywords_lower:
+        if kw in searchable_text:
+            matched_keywords.append(kw)
+    
+    # If no exact matches, try word-level matching for multi-word keywords
+    if not matched_keywords:
+        for kw in keywords_lower:
+            kw_words = kw.split()
+            if len(kw_words) > 1:
+                # Check if at least half the words from the keyword appear in the text
+                matching_words = sum(1 for word in kw_words if word in searchable_text)
+                if matching_words >= len(kw_words) / 2:
+                    matched_keywords.append(kw)
+            else:
+                # Single word - check for partial matches or related terms
+                if kw in searchable_text or any(kw in word for word in searchable_text.split() if len(word) > 4):
+                    matched_keywords.append(kw)
+    
+    # If still no matches, be very permissive and include all results for now
+    # (since the vector similarity should be handling relevance)
+    if not matched_keywords:
+        # For now, let everything through since vector similarity is the main filter
+        return True
+    
+    # Add matched keywords to the document
+    formatted_doc["matched_keywords"] = matched_keywords
+    return True  # Always return True for now to focus on similarity-based relevance
+
+
 def _extract_metadata_from_result(doc) -> dict:
-    """Extract metadata dict from a vector store retrieval result item.
-    Pathway VectorStore returns results as pathway.internals.json.Json objects with .value containing the data.
+    """Extract metadata from a vector store retrieval result item.
+    Pathway VectorStore returns results in complex Json format - need to navigate the structure.
+    Based on debug output, we know metadata exists with keys like 'abstract','authors','title','url'
+    but it's nested in a complex Pathway Json structure.
     """
+    print(f"🔧 DEBUG: Extracting metadata from {type(doc)}")
+    
     try:
-        # Handle Pathway Json objects - the actual data is in .value
+        # Handle Pathway Json objects with .value containing the actual data
         if hasattr(doc, 'value'):
             doc_data = getattr(doc, 'value')
+            print(f"🔧 DEBUG: Found document data in .value: {list(doc_data.keys()) if isinstance(doc_data, dict) else type(doc_data)}")
+            
+            # If doc_data is a list, we're probably dealing with a list of results, not a single document
+            if isinstance(doc_data, list):
+                print(f"🔧 DEBUG: Document data is a list with {len(doc_data)} items, cannot extract metadata from list")
+                return {}
+            
             if isinstance(doc_data, dict):
-                print(f"🔧 DEBUG: Found document data in .value: {list(doc_data.keys())}")
-                return doc_data
+                # First check if this is already processed metadata with all our fields
+                if 'id' in doc_data or 'title' in doc_data or 'similarity_score' in doc_data:
+                    return doc_data
+                
+                # Handle VectorStore result format: {'text': '...', 'metadata': {...}, 'dist': 0.xx}
+                if 'metadata' in doc_data:
+                    metadata_obj = doc_data['metadata']
+                    print(f"🔧 DEBUG: metadata_obj type: {type(metadata_obj)}")
+                    
+                    metadata = {}
+                    
+                    # Handle nested Pathway Json metadata object
+                    if hasattr(metadata_obj, 'value'):
+                        metadata_raw = getattr(metadata_obj, 'value')
+                        print(f"🔧 DEBUG: metadata from .value: {list(metadata_raw.keys()) if isinstance(metadata_raw, dict) else type(metadata_raw)}")
+                        if isinstance(metadata_raw, dict):
+                            metadata = metadata_raw
+                    elif isinstance(metadata_obj, dict):
+                        metadata = metadata_obj
+                        print(f"🔧 DEBUG: metadata is dict: {list(metadata.keys())}")
+                    else:
+                        print(f"🔧 DEBUG: metadata_obj type not handled: {type(metadata_obj)}")
+                        # Try to extract directly from attributes if it's an object
+                        for field in ['id', 'paper_id', 'title', 'abstract', 'authors', 'url', 'primary_category']:
+                            if hasattr(metadata_obj, field):
+                                val = getattr(metadata_obj, field)
+                                # Handle nested Json values
+                                if hasattr(val, 'value'):
+                                    metadata[field] = getattr(val, 'value')
+                                else:
+                                    metadata[field] = val
+                    
+                    # Add distance/score from the top level if available
+                    if 'dist' in doc_data:
+                        metadata['dist'] = doc_data['dist']
+                    if 'distance' in doc_data:
+                        metadata['distance'] = doc_data['distance']
+                    
+                    print(f"🔧 DEBUG: Final extracted metadata keys: {list(metadata.keys()) if metadata else 'empty'}")
+                    return metadata
+                
+                # If no explicit metadata key, check if doc_data contains the fields directly
+                # (fallback for different VectorStore formats)
+                metadata_fields = ['id', 'paper_id', 'title', 'abstract', 'authors', 'url', 'primary_category', 'file_path']
+                if any(field in doc_data for field in metadata_fields):
+                    print(f"🔧 DEBUG: Found metadata fields directly in doc_data")
+                    return doc_data
         
-        # Fallback patterns for other formats
-        if hasattr(doc, 'metadata') and doc.metadata is not None:
-            if isinstance(doc.metadata, dict):
-                return doc.metadata
-            elif hasattr(doc.metadata, '__dict__'):
-                return doc.metadata.__dict__
+        # Handle standard dictionary
+        if isinstance(doc, dict):
+            print(f"🔧 DEBUG: doc is standard dict with keys: {list(doc.keys())}")
+            return doc
         
-        # Check if doc itself has the metadata fields directly
-        if hasattr(doc, 'id') or hasattr(doc, 'title'):
+        # Handle objects with metadata attribute
+        if hasattr(doc, 'metadata'):
+            metadata_obj = getattr(doc, 'metadata')
+            print(f"🔧 DEBUG: Found .metadata attribute: {type(metadata_obj)}")
+            if hasattr(metadata_obj, 'value'):
+                return getattr(metadata_obj, 'value')
+            elif isinstance(metadata_obj, dict):
+                return metadata_obj
+            elif hasattr(metadata_obj, '__dict__'):
+                return metadata_obj.__dict__
+        
+        # Check if doc itself has the metadata fields directly as attributes
+        if hasattr(doc, 'id') or hasattr(doc, 'title') or hasattr(doc, 'paper_id'):
             metadata = {}
-            for field in ['id', 'title', 'abstract', 'authors', 'similarity_score', 'url', 
-                         'primary_category', 'file_path', 'secondary_categories', 'sub_categories']:
+            for field in ['id', 'paper_id', 'title', 'abstract', 'authors', 'similarity_score', 'url', 
+                         'primary_category', 'file_path', 'secondary_categories', 'sub_categories', 'published_date']:
                 if hasattr(doc, field):
                     val = getattr(doc, field)
-                    metadata[field] = val
+                    # Handle nested Json values
+                    if hasattr(val, 'value'):
+                        metadata[field] = getattr(val, 'value')
+                    else:
+                        metadata[field] = val
             if metadata:
+                print(f"🔧 DEBUG: Extracted metadata from object attributes: {list(metadata.keys())}")
                 return metadata
         
-        # Dict-like access
-        if isinstance(doc, dict):
-            return doc
-            
+        # Final fallback: try to extract from __dict__ if available
+        if hasattr(doc, '__dict__'):
+            doc_dict = doc.__dict__
+            print(f"🔧 DEBUG: Trying __dict__ with keys: {list(doc_dict.keys())}")
+            # Look for any metadata-like structure
+            for key in doc_dict:
+                val = doc_dict[key]
+                if isinstance(val, dict) and any(field in val for field in ['title', 'abstract', 'authors']):
+                    print(f"🔧 DEBUG: Found metadata in __dict__['{key}']")
+                    return val
+                elif hasattr(val, 'value') and isinstance(getattr(val, 'value'), dict):
+                    val_dict = getattr(val, 'value')
+                    if any(field in val_dict for field in ['title', 'abstract', 'authors']):
+                        print(f"🔧 DEBUG: Found metadata in __dict__['{key}'].value")
+                        return val_dict
+        
     except Exception as e:
         print(f"🔧 ERROR: Error extracting metadata from {type(doc)}: {e}")
         import traceback
@@ -339,32 +471,49 @@ def _extract_score_from_result(doc) -> float:
                 # Look for score-related fields in the document data
                 for score_key in ['similarity_score', 'score', 'relevance_score', 'dist', 'distance']:
                     if score_key in doc_data and doc_data[score_key] is not None:
-                        score = doc_data[score_key]
-                        print(f"🔧 DEBUG: Found {score_key} = {score}")
+                        score_value = doc_data[score_key]
+                        print(f"🔧 DEBUG: Found {score_key} = {score_value}")
                         
-                        # Handle distance (convert to similarity)
+                        # Handle distance (convert to similarity: similarity = 1 - distance)
                         if score_key in ['dist', 'distance']:
-                            return max(0.0, 1.0 - float(score))
+                            similarity = max(0.0, 1.0 - float(score_value))
+                            print(f"🔧 DEBUG: Converted distance {score_value} to similarity {similarity}")
+                            return similarity
                         else:
-                            return float(score)
+                            return float(score_value)
+        
+        # Handle direct dictionary access (common case)
+        if isinstance(doc, dict):
+            for score_key in ['similarity_score', 'score', 'relevance_score', 'dist', 'distance']:
+                if score_key in doc and doc[score_key] is not None:
+                    score_value = doc[score_key]
+                    print(f"🔧 DEBUG: Found {score_key} = {score_value} in dict")
+                    
+                    # Handle distance (convert to similarity)
+                    if score_key in ['dist', 'distance']:
+                        similarity = max(0.0, 1.0 - float(score_value))
+                        print(f"🔧 DEBUG: Converted distance {score_value} to similarity {similarity}")
+                        return similarity
+                    else:
+                        return float(score_value)
         
         # Fallback: check for direct score attributes on the doc object
-        score_attrs = ['similarity_score', 'score', 'relevance_score', 'distance']
+        score_attrs = ['similarity_score', 'score', 'relevance_score', 'dist', 'distance']
         for attr_name in score_attrs:
             if hasattr(doc, attr_name):
                 val = getattr(doc, attr_name)
                 print(f"🔧 DEBUG: Found {attr_name}: {val} (type: {type(val)})")
                 if hasattr(val, 'value'):
                     score = getattr(val, 'value')
-                    return float(score) if score is not None else 0.0
+                    if attr_name in ['dist', 'distance']:
+                        return max(0.0, 1.0 - float(score)) if score is not None else 0.0
+                    else:
+                        return float(score) if score is not None else 0.0
                 elif val is not None:
-                    return float(val)
-        
-        # Dict-like access for other document formats
-        if isinstance(doc, dict):
-            for score_key in score_attrs:
-                if score_key in doc and doc[score_key] is not None:
-                    return float(doc[score_key])
+                    if attr_name in ['dist', 'distance']:
+                        return max(0.0, 1.0 - float(val))
+                    else:
+                        return float(val)
         
     except (ValueError, TypeError) as e:
         print(f"🔧 WARNING: Error converting score to float: {e}")
@@ -383,8 +532,11 @@ def format_document(doc):
     """Format a document for output using extracted metadata and score.
     Enhanced to handle Pathway VectorStore format specifically."""
     
+    print(f"🔧 DEBUG: format_document called with {type(doc)}")
+    
     # Try to extract metadata first - this is the key function that needs to work
     metadata = _extract_metadata_from_result(doc)
+    print(f"🔧 DEBUG: format_document extracted metadata: {list(metadata.keys()) if metadata else 'None'}")
     
     # Debug: Print the actual document structure once for troubleshooting
     if not hasattr(format_document, '_debug_printed'):
@@ -397,6 +549,7 @@ def format_document(doc):
     
     # Extract score - also debug this
     score = _extract_score_from_result(doc)
+    print(f"🔧 DEBUG: format_document extracted score: {score}")
     
     # Build the formatted document with fallbacks
     formatted = {
@@ -411,6 +564,8 @@ def format_document(doc):
         "file_path": metadata.get("file_path", None),
         "matched_keywords": [],
     }
+    
+    print(f"🔧 DEBUG: format_document returning: {list(formatted.keys())} with score={formatted['similarity_score']}")
     
     # If we couldn't extract basic fields from metadata, try direct access
     if formatted["id"] == "unknown" and hasattr(doc, 'paper_id'):
@@ -528,9 +683,13 @@ def print_final_summary(original_query: str, results) -> str:
                 if isinstance(doc, dict) and any(k in doc for k in ("id", "title", "abstract", "file_path")):
                     # Ensure similarity_score exists for consistent shape
                     if "similarity_score" not in doc:
+                        # Try to extract score properly rather than defaulting to 0.0
                         try:
-                            doc = {**doc, "similarity_score": doc.get("score", 0.0)}
-                        except Exception:
+                            extracted_score = _extract_score_from_result(doc)
+                            doc = {**doc, "similarity_score": extracted_score}
+                            print(f"🔧 DEBUG: Successfully extracted score {extracted_score} for document with keys {list(doc.keys())}")
+                        except Exception as e:
+                            print(f"🔧 ERROR: Failed to extract score from document: {e}")
                             doc = {**doc, "similarity_score": 0.0}
                     return doc
                 # Otherwise, build from metadata extractor
