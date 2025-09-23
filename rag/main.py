@@ -1213,7 +1213,8 @@ def _generate_conclusion(query: str, key_findings: list[dict], keywords: list[st
     
     # Specific domain analysis
     if len(categories) > 1:
-        specific_cats = [cat for cat in categories if cat != 'Unknown']
+        # Convert Json objects to strings before sorting to avoid Json comparison error
+        specific_cats = [str(cat) for cat in categories if str(cat) != 'Unknown']
         if specific_cats:
             conclusion_parts.append(f"This research spans {', '.join(sorted(specific_cats))} domains, ")
             conclusion_parts.append("indicating the interdisciplinary nature of the topic. ")
