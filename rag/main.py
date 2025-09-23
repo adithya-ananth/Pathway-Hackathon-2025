@@ -401,6 +401,14 @@ def _extract_metadata_from_result(doc) -> dict:
         # Handle standard dictionary
         if isinstance(doc, dict):
             print(f"🔧 DEBUG: doc is standard dict with keys: {list(doc.keys())}")
+            # Check for metadata or _metadata nested keys first
+            if 'metadata' in doc and isinstance(doc['metadata'], dict):
+                print(f"🔧 DEBUG: Found nested metadata key in dict")
+                return doc['metadata']
+            if '_metadata' in doc and isinstance(doc['_metadata'], dict):
+                print(f"🔧 DEBUG: Found nested _metadata key in dict")
+                return doc['_metadata']
+            # If no nested metadata, return the whole dict as fallback
             return doc
         
         # Handle objects with metadata attribute
@@ -598,31 +606,45 @@ def pretty_print_results(original_query: str, results) -> str:
         except Exception:
             return []
 
-    print("\n=== Query Results ===")
-    print(f"Query: {original_query}")
+        print("\n=== Query Results ===")
+        print(f"Query: {original_query}")
 
-    if not results:
-        print("No results found.")
-        return "printed_0"
+        # Print raw count and quick shape hints
+        try:
+            rlen = len(results) if hasattr(results, "__len__") else None
+        except Exception:
+            rlen = None
+        if rlen is not None:
+            print(f"Results count (post-process): {rlen}")
 
-    for i, doc in enumerate(results, start=1):
-        title = _safe_get(doc, "title", "")
-        score = _safe_get(doc, "similarity_score", 0.0)
-        score = float(score) if score is not None else 0.0
-        matched = _to_list(_safe_get(doc, "matched_keywords", []))
-        doc_id = _safe_get(doc, "id", "")
+        if not results:
+            print("No results found.")
+            return "printed_0"
 
-        print(f"{i}. {title} (score: {score:.3f})")
-        if matched:
-            try:
-                print(f"   matched: {', '.join([str(m) for m in matched])}")
-            except Exception:
-                print(f"   matched: {matched}")
-        print(f"   id: {doc_id}")
+        for i, doc in enumerate(results, start=1):
+            title = _safe_get(doc, "title", "")
+            score = _safe_get(doc, "similarity_score", 0.0)
+            score = float(score) if score is not None else 0.0
+            matched = _to_list(_safe_get(doc, "matched_keywords", []))
+            doc_id = _safe_get(doc, "id", "")
 
-    return f"printed_{len(results)}"
+            # Quick shape hint for debugging empty titles/ids
+            if isinstance(doc, dict):
+                keys_hint = ",".join(sorted(list(doc.keys()))[:6])
+            else:
+                keys_hint = type(doc).__name__
 
+            print(f"{i}. \"{title}\" (score: {score:.3f}) | shape: {keys_hint}")
+            if not title and not doc_id:
+                print(f"   [DEBUG] Empty title/id - doc keys: {list(doc.keys()) if isinstance(doc, dict) else 'N/A'}")
+            if matched:
+                try:
+                    print(f"   matched: {', '.join([str(m) for m in matched])}")
+                except Exception:
+                    print(f"   matched: {matched}")
+            print(f"   id: \"{doc_id}\"")
 
+        return f"printed_{len(results)}"
 def print_comprehensive_answer(query: str, answer: str) -> str:
     """
     Print the comprehensive answer to the console in a formatted way
@@ -774,6 +796,39 @@ def create_rag_system():
     )
     pw.io.jsonlines.write(raw, "./.raw_retrieve_counts.jsonl")
 
+    # Debug: compact dump of the actual matched docs (first K) with ids/titles/scores
+    def _compactify(rs: list) -> list:
+        out = []
+        try:
+            for d in rs[:10] if rs else []:
+                md = _extract_metadata_from_result(d)
+                out.append({
+                    "id": md.get("id", "unknown"),
+                    "title": md.get("title", ""),
+                    "score": _extract_score_from_result(d),
+                    "has_doc": hasattr(d, "doc"),
+                    "has_document": hasattr(d, "document"),
+                    "is_dict": isinstance(d, dict),
+                    "has_value": hasattr(d, "value"),
+                    "type": str(type(d).__name__),
+                })
+        except Exception as e:
+            out.append({"error": str(e)})
+        return out
+
+    raw_compact = vector_store.retrieve_query(
+        query_table.select(
+            query=pw.this.query,
+            k=pw.this.top_k,
+            metadata_filter=pw.cast(str | None, None),
+            filepath_globpattern=pw.cast(str | None, None),
+        )
+    ).join(query_table, pw.left.id == pw.right.id).select(
+        query=query_table.query,
+        docs=pw.apply(_compactify, pw.left.result),
+    )
+    pw.io.jsonlines.write(raw_compact, "./.raw_retrieve_compact.jsonl")
+
     # Debug: inspect metadata keys present in first document of each result set
     def _first_doc_metadata_keys(rs: list) -> list[str]:
         try:
@@ -868,6 +923,21 @@ def create_rag_system():
         )
     )
     pw.io.jsonlines.write(final_printer, "./.final_console_prints.jsonl")
+    
+    # Persist the processed results list for each query as we print them
+    processed_debug = results.select(
+        query=pw.this.original_query,
+        results_count=pw.apply(lambda rs: len(rs) if rs else 0, pw.this.results),
+        first_result_sample=pw.apply(
+            lambda rs: {
+                "id": rs[0].get("id", "unknown") if rs and isinstance(rs[0], dict) else "no_first",
+                "title": rs[0].get("title", "") if rs and isinstance(rs[0], dict) else "",
+                "score": rs[0].get("similarity_score", 0.0) if rs and isinstance(rs[0], dict) else 0.0,
+            } if rs else {"empty": True},
+            pw.this.results
+        ),
+    )
+    pw.io.jsonlines.write(processed_debug, "./.processed_results_debug.jsonl")
     
     # Generate comprehensive answers using the enhanced answer_query_with_context function
     comprehensive_answers = results.select(
