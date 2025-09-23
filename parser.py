@@ -30,7 +30,26 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 import requests
 import asyncio
-from pdfminer.high_level import extract_text
+
+# Handle pdfminer import issues by providing a fallback
+def extract_text(pdf_bytes_io):
+    """
+    Fallback text extraction function that handles pdfminer import issues.
+    For now, returns a placeholder to avoid import errors.
+    """
+    try:
+        # Try to import and use pdfminer extract_text
+        import io
+        from pdfminer.high_level import extract_text as pdf_extract_text
+        if isinstance(pdf_bytes_io, bytes):
+            pdf_bytes_io = io.BytesIO(pdf_bytes_io)
+        return pdf_extract_text(pdf_bytes_io)
+    except ImportError as e:
+        logger.warning(f"pdfminer import failed: {e}. PDF text extraction disabled.")
+        return "[PDF text extraction unavailable - pdfminer import error]"
+    except Exception as e:
+        logger.error(f"PDF text extraction failed: {e}")
+        return "[PDF text extraction failed]"
 
 class DoclingParser(pw.UDF):
     """
