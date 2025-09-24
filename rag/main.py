@@ -1036,7 +1036,7 @@ def answer_query_with_context(query: str, search_results: list, keywords: list[s
     document_summaries = []
     
     # Process each document to extract relevant information
-    for i, doc in enumerate(search_results[:5], 1):  # Process top 5 results
+    for i, doc in enumerate(search_results[:7], 1):  # Process top 7 results
         # Collect metadata using safe extraction
         matched_kws = _safe_get_from_doc(doc, 'matched_keywords', [])
         matched_kws = _safe_convert_to_list(matched_kws)

@@ -7,7 +7,7 @@ import os
 # --- Configuration ---
 # --- MODIFICATION: Read keywords from a config file ---
 CONFIG_FILENAME = "config.json"
-MAX_RESULTS = 3
+MAX_RESULTS = 20
 OUTPUT_FILENAME = "arxiv_papers.jsonl"
 
 def load_keywords_from_config(filename: str) -> list:
@@ -42,10 +42,12 @@ def fetch_and_save_arxiv_papers():
     search_keywords = load_keywords_from_config(CONFIG_FILENAME)
     
     # Build the search query from the loaded keywords
-    search_query = "+OR+".join([f'all:"{urllib.parse.quote(kw)}"' for kw in search_keywords])
+    search_query = "+".join([f'all:"{urllib.parse.quote(kw)}"' for kw in search_keywords])
     
-    query = f"search_query={search_query}&sortBy=submittedDate&sortOrder=descending&max_results={MAX_RESULTS}"
+    query = f"search_query={search_query}&sortBy=relevance&sortOrder=descending&max_results={MAX_RESULTS}"
     full_url = "http://export.arxiv.org/api/query?" + query
+
+    print("URL = ",full_url)
     
     print(f"   Querying API: {full_url[:150]}...") # Print a truncated URL
     try:
