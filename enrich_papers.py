@@ -8,12 +8,12 @@ from datetime import datetime
 
 # --- Configuration ---
 load_dotenv()
-API_KEY = os.getenv("GEMINI_API_KEY")
+API_KEY = os.getenv("GEMINI_API_KEY_ENRICH")
 if not API_KEY:
     raise ValueError("GEMINI_API_KEY not found. Please set it in your .env file.")
 
 genai.configure(api_key=API_KEY)
-model = genai.GenerativeModel('gemini-1.5-flash')
+model = genai.GenerativeModel("gemini-2.0-flash-lite")
 
 # --- File I/O Configuration ---
 SOURCE_JSONL_FILE = 'arxiv_papers.jsonl'

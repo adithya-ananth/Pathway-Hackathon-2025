@@ -8,16 +8,22 @@ load_dotenv()
 
 # --- Configure Gemini API ---
 try:
-    genai.configure(api_key=os.environ["GEMINI_API_KEY"])
+    genai.configure(api_key=os.environ["GEMINI_API_KEY_EXTRACT"])
 except KeyError:
     raise RuntimeError("Please set the GEMINI_API_KEY environment variable.")
+
+# import google.generativeai as genai
+# genai.configure(api_key="GEMINI_API_KEY")
+# model = genai.GenerativeModel("gemini-2.0-flash-lite")
+# resp = model.generate_content("Say hello")
+# print(resp.text)
 
 def extract_keywords_from_prompt(user_prompt: str) -> List[str]:
     """
     Uses the Gemini API to extract keywords from a user prompt.
     Returns a list of keyword strings.
     """
-    model = genai.GenerativeModel('gemini-1.5-flash') # Using 1.5-flash for potentially better extraction
+    model = genai.GenerativeModel("gemini-2.0-flash-lite") # Using 1.5-flash for potentially better extraction
     prompt_template = f"""
     You are an expert at identifying specific, technical keywords and topics from research paper queries.
     Given a user's prompt, extract the main topics, research areas, and keywords.
@@ -30,7 +36,7 @@ def extract_keywords_from_prompt(user_prompt: str) -> List[str]:
     Keywords: Deep Reinforcement Learning, Robotics
 
     User Prompt: "I need papers on ORB-SLAM3"
-    Keywords: ORB-SLAM3, SLAM, Visual Odometry, Computer Vision
+    Keywords: ORB-SLAM3, SLAM, Visual Odometry
 
     User Prompt: "{user_prompt}"
     Keywords:
@@ -57,6 +63,8 @@ if __name__ == "__main__":
 
     print(f"▶️  Generating keywords from prompt: \"{input_prompt}\"")
     extracted_keywords = extract_keywords_from_prompt(input_prompt)
+
+    print("Extracted keywrods: ", extracted_keywords)
 
     # If keyword extraction fails, create fallback keywords from the prompt
     if not extracted_keywords:
