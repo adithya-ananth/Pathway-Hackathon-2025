@@ -1,23 +1,11 @@
-import subprocess
-import sys
+import keyword_extractor
+import scraper
+import parser
+import enrich_papers
+import rag.main
 
-scripts = [
-    "keyword_extractor.py",
-    "scraper.py",
-    "parser.py",
-    "enrich_papers.py",
-    "rag/main.py"
-]
-
-def run_scripts():
-    for script in scripts:
-        print(f"\nRunning {script} ...")
-        try:
-            # Run the script with the same Python interpreter
-            subprocess.run([sys.executable, script], check=True)
-        except subprocess.CalledProcessError as e:
-            print(f"Error running {script}: {e}")
-    print("\nAll scripts completed successfully!")
-
-if __name__ == "__main__":
-    run_scripts()
+keyword_extractor.run_keyword_extraction("Tell me about ORB-SLAM3, SLAM and Visual Odometry.")
+scraper.fetch_and_save_arxiv_papers()
+parser.parse_and_save_papers()
+enrich_papers.main()
+rag.main.main()

@@ -54,9 +54,10 @@ def extract_keywords_from_prompt(user_prompt: str) -> List[str]:
         print(f"Keyword extraction failed: {e}")
         return []
 
-if __name__ == "__main__":
-    # You can change the input prompt here
-    input_prompt = input("Enter a research paper query prompt: ")
+def run_keyword_extraction(input_prompt: str) -> None:
+    """
+    Main function to run keyword extraction and create config/query files.
+    """
     config_filename = "config.json"
     query_stream_dir = "query_stream"
     query_filename = "input_query.jsonl"
