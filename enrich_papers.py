@@ -128,7 +128,7 @@ def create_rag_compatible_papers(all_papers_map):
         for paper in rag_papers:
             f.write(json.dumps(paper) + '\n')
     
-    print(f"✅ Updated {enriched_file} with {len(rag_papers)} papers (RAG-compatible format)")
+    print(f"Updated {enriched_file} with {len(rag_papers)} papers (RAG-compatible format)")
     return rag_papers
 
 def main():
@@ -136,10 +136,10 @@ def main():
     Main workflow: Reads source data, enriches it with references and AI-generated
     sub-categories, and saves a final, complete dataset in JSONL format.
     """
-    print("🚀 Starting the paper enrichment pipeline...")
+    print("Starting the paper enrichment pipeline...")
 
     if not os.path.exists(SOURCE_JSONL_FILE):
-        print(f"❌ FATAL ERROR: Source file not found at '{SOURCE_JSONL_FILE}'")
+        print(f"FATAL ERROR: Source file not found at '{SOURCE_JSONL_FILE}'")
         return
 
     all_papers_map = {}
@@ -150,16 +150,16 @@ def main():
                 paper_data = json.loads(line)
                 all_papers_map[paper_data['doc_id']] = paper_data
     except Exception as e:
-        print(f"❌ FATAL ERROR reading or parsing '{SOURCE_JSONL_FILE}' on line {i+1}. Details: {e}")
+        print(f"FATAL ERROR reading or parsing '{SOURCE_JSONL_FILE}' on line {i+1}. Details: {e}")
         return
 
     if not all_papers_map:
-        print("⚠️ Warning: No papers were loaded.")
+        print("Warning: No papers were loaded.")
         return
-    print(f"✅ Loaded metadata for {len(all_papers_map)} papers from '{SOURCE_JSONL_FILE}'.")
+    print(f"Loaded metadata for {len(all_papers_map)} papers from '{SOURCE_JSONL_FILE}'.")
 
     papers_to_process_for_api = []
-    print("📖 Reading text files and extracting references (using robust v3 parser)...")
+    print("Reading text files and extracting references (using robust v3 parser)...")
     
     # First, set default values for all papers
     for doc_id in all_papers_map:
@@ -188,7 +188,7 @@ def main():
                     file_found = True
                     selected_path = file_path
                     text_files_found += 1
-                    print(f"   ✅ Found text file for {doc_id} at {file_path}")
+                    print(f"Found text file for {doc_id} at {file_path}")
                     break
             except FileNotFoundError:
                 continue
@@ -215,17 +215,17 @@ def main():
                 })
             print(f"   - Warning: Text file not found for {doc_id}. Using abstract as fallback.")
 
-    print(f"📊 Processing status: {text_files_found} full text files found, {len(papers_to_process_for_api)} papers total")
+    print(f"Processing status: {text_files_found} full text files found, {len(papers_to_process_for_api)} papers total")
 
     # Always process papers (with full text or abstracts)
     if papers_to_process_for_api:
         final_prompt = build_prompt(papers_to_process_for_api)
-        print(f"🤖 Sending request for {len(papers_to_process_for_api)} papers to Gemini API...")
+        print(f"Sending request for {len(papers_to_process_for_api)} papers to Gemini API...")
         try:
             response = model.generate_content(final_prompt)
             cleaned_response_text = response.text.strip().replace("```json", "").replace("```", "").strip()
             result_data = json.loads(cleaned_response_text)
-            print("✅ Received and parsed AI-generated sub-categories.")
+            print("Received and parsed AI-generated sub-categories.")
 
             results_map = {result['doc_id']: result['sub_categories'] for result in result_data}
             for doc_id, sub_categories in results_map.items():
@@ -233,7 +233,7 @@ def main():
                     all_papers_map[doc_id]['sub_categories'] = sub_categories
 
         except Exception as e:
-            print(f"⚠️ API call failed, continuing with basic metadata: {e}")
+            print(f"API call failed, continuing with basic metadata: {e}")
             # Continue without AI-generated sub-categories
 
     # Always create the final dataset
@@ -247,12 +247,12 @@ def main():
         for paper_record in final_dataset:
             f.write(json.dumps(paper_record) + '\n')
 
-    print(f"✅ Created enriched dataset at '{FINAL_OUTPUT_FILE}' with {len(final_dataset)} papers")
+    print(f"Created enriched dataset at '{FINAL_OUTPUT_FILE}' with {len(final_dataset)} papers")
 
     # Create RAG-compatible papers and add to content stream
     create_rag_compatible_papers(all_papers_map)
     
-    print(f"\n📄🎉 Success! Papers processed and added to RAG content stream.")
+    print(f"\nSuccess! Papers processed and added to RAG content stream.")
     print(f"   - {text_files_found} papers with full text processed")
     print(f"   - {len(final_dataset)} total papers available for RAG system")
 

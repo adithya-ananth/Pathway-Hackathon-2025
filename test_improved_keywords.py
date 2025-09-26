@@ -14,16 +14,16 @@ def test_improved_system():
     
     # Test query about wave-particle duality
     query = "Find me examples of particles having wave nature"
-    print(f"\n🔍 Testing query: '{query}'")
+    print(f"\nTesting query: '{query}'")
     
     # Generate improved keywords
     keywords = generate_keywords_from_query(query)
-    print(f"📝 Generated keywords: {keywords}")
+    print(f"Generated keywords: {keywords}")
     
     # Test the RAG system
     results = call_rag_pipeline(query, keywords, top_k=3)
     
-    print(f"\n✅ Results received: {len(results.get('results', []))} documents")
+    print(f"\nResults received: {len(results.get('results', []))} documents")
     for i, doc in enumerate(results.get('results', [])):
         print(f"  Document {i+1}:")
         print(f"    Title: {doc.get('title', 'Unknown')}")

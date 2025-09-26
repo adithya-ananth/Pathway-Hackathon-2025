@@ -18,19 +18,19 @@ def test_rag_integration():
     cleanup_test_files()
     
     # Test 1: Query with no results (empty database)
-    print("📝 Test 1: Query empty database")
+    print("Test 1: Query empty database")
     query_empty_database()
     
     print("\n" + "="*50)
     
     # Test 2: Add content and query again  
-    print("\n� Test 2: Add content and query again")
+    print("\nTest 2: Add content and query again")
     add_test_content()
     time.sleep(2)  # Give RAG time to process
     query_with_content()
     
-    print("\n✅ All tests completed!")
-    print("🔍 Check query_results.jsonl for actual results")
+    print("\nAll tests completed!")
+    print("Check query_results.jsonl for actual results")
 
 def cleanup_test_files():
     """Remove any existing test files"""
@@ -62,9 +62,9 @@ def query_empty_database():
         json.dump(query_data, f)
         f.write('\n')
     
-    print(f"🔍 Query sent: {query_data['query']}")
-    print(f"📁 Query file: {query_file}")
-    print("⏳ Expected result: Empty/no results (database is empty)")
+    print(f"Query sent: {query_data['query']}")
+    print(f"Query file: {query_file}")
+    print("Expected result: Empty/no results (database is empty)")
 
 def add_test_content():
     """Add test papers to content stream"""
@@ -114,9 +114,9 @@ def add_test_content():
         with open(content_file, 'w') as f:
             json.dump(paper, f)
             f.write('\n')
-        print(f"📄 Added paper: {paper['title']}")
+        print(f"Added paper: {paper['title']}")
     
-    print("✅ Test content added to ./content_stream/")
+    print("Test content added to ./content_stream/")
 
 def query_with_content():
     """Test querying after content has been added"""
@@ -133,9 +133,9 @@ def query_with_content():
         json.dump(query_data, f)
         f.write('\n')
     
-    print(f"🔍 Query sent: {query_data['query']}")
-    print(f"📁 Query file: {query_file}")
-    print("⏳ Expected result: Should find the quantum computing papers")
+    print(f"Query sent: {query_data['query']}")
+    print(f"Query file: {query_file}")
+    print("Expected result: Should find the quantum computing papers")
 
 if __name__ == "__main__":
     test_rag_integration()
