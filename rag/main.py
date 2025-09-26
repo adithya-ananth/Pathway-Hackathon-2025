@@ -154,14 +154,13 @@ def setup_dynamic_content_pipeline():
     os.makedirs("./content_stream", exist_ok=True)
     os.makedirs("./query_stream", exist_ok=True)
     
-    # Stream from files (auto-updates when files change)
+    # One-shot read of files present at start (no continuous streaming)
     content_stream = pw.io.jsonlines.read(
         "./content_stream/",
         schema=ContentSchema,
-        mode="streaming",
-        autocommit_duration_ms=1000  # Update every 1 second
+        mode="static",
     )
-    print("📥 Content: streaming from ./content_stream/ (JSONL)")
+    print("📥 Content: reading once from ./content_stream/ (JSONL)")
     
     return content_stream
 
@@ -173,11 +172,10 @@ def setup_dynamic_query_pipeline():
     """
     query_stream = pw.io.jsonlines.read(
         "./query_stream/",
-        schema=QuerySchema, 
-        mode="streaming",
-        autocommit_duration_ms=500  # Fast processing for real-time queries
+        schema=QuerySchema,
+        mode="static",
     )
-    print("📨 Queries: streaming from ./query_stream/")
+    print("📨 Queries: reading once from ./query_stream/")
     
     return query_stream
 
@@ -215,8 +213,28 @@ def query_rag_pipeline(vector_store, query_table: pw.Table[QuerySchema]):
         # Process results and ensure they have similarity scores
         processed_results = []
         
-        if isinstance(query_results, list):
-            for i, doc in enumerate(query_results):
+        # Try to coerce Pathway Json results into a Python list
+        def _as_list(obj):
+            if isinstance(obj, list):
+                return obj
+            # Pathway Json wrapper often exposes underlying value via `.value`
+            if hasattr(obj, 'value'):
+                try:
+                    v = obj.value
+                    if isinstance(v, list):
+                        return v
+                except Exception:
+                    pass
+            # Last resort: try iterating
+            try:
+                return list(obj)
+            except Exception:
+                return None
+
+        qr_list = _as_list(query_results)
+
+        if isinstance(qr_list, list):
+            for i, doc in enumerate(qr_list):
                 print(f"🔧 DEBUG: Document {i} type: {type(doc)}")
                 if hasattr(doc, '__dict__'):
                     print(f"🔧 DEBUG: Document {i} attributes: {list(doc.__dict__.keys()) if hasattr(doc, '__dict__') else 'N/A'}")
@@ -995,7 +1013,8 @@ def _generate_conclusion(query: str, key_findings: list[dict], keywords: list[st
     
     # Analyze the specific content
     num_docs = len(key_findings)
-    categories = set(f.get('category', 'Unknown') for f in key_findings)
+    # Cast categories to strings to avoid sorting/compare issues with Json wrappers
+    categories = set(str(f.get('category', 'Unknown')) for f in key_findings)
     actual_titles = [f.get('title', '') for f in key_findings]
     
     # More specific opening based on actual content
@@ -1009,7 +1028,7 @@ def _generate_conclusion(query: str, key_findings: list[dict], keywords: list[st
     
     # Specific domain analysis
     if len(categories) > 1:
-        specific_cats = [cat for cat in categories if cat != 'Unknown']
+        specific_cats = [str(cat) for cat in categories if str(cat) != 'Unknown']
         if specific_cats:
             conclusion_parts.append(f"This research spans {', '.join(sorted(specific_cats))} domains, ")
             conclusion_parts.append("indicating the interdisciplinary nature of the topic. ")
