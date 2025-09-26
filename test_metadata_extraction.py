@@ -16,18 +16,18 @@ def test_metadata_extraction():
     # First, read some vector data from the cache
     cache_file = Path(".vector_data_cache.jsonl")
     if not cache_file.exists():
-        print("❌ Vector cache file not found")
+        print("vector cache file not found")
         return
     
-    print("📄 Reading vector cache data...")
+    print("Reading vector cache data...")
     with open(cache_file, 'r') as f:
         lines = list(f)
     
     if not lines:
-        print("❌ No data in vector cache")
+        print("No data in vector cache")
         return
         
-    print(f"📊 Found {len(lines)} cached documents")
+    print(f"Found {len(lines)} cached documents")
     
     # Test with first document
     first_doc = json.loads(lines[0])
@@ -82,12 +82,12 @@ def test_metadata_extraction():
         print(f"Similarity score: {formatted_doc.get('similarity_score', 'NOT FOUND')}")
         
         if formatted_doc.get('title') and formatted_doc.get('title') != '':
-            print("✅ SUCCESS: Metadata extraction working!")
+            print("SUCCESS: Metadata extraction working!")
         else:
-            print("❌ FAILED: Title still empty after extraction")
+            print("FAILED: Title still empty after extraction")
             
     except Exception as e:
-        print(f"❌ Error testing extraction: {e}")
+        print(f"Error testing extraction: {e}")
         import traceback
         traceback.print_exc()
 

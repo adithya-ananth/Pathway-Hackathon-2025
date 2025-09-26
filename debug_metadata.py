@@ -11,15 +11,15 @@ def analyze_enriched_papers():
     file_path = Path("content_stream/enriched_papers.jsonl")
     
     if not file_path.exists():
-        print("❌ enriched_papers.jsonl not found")
+        print("enriched_papers.jsonl not found")
         return
     
-    print("📄 Analyzing enriched_papers.jsonl structure...")
+    print("Analyzing enriched_papers.jsonl structure...")
     
     with open(file_path, 'r') as f:
         lines = list(f)
         
-    print(f"📊 Total papers: {len(lines)}")
+    print(f"Total papers: {len(lines)}")
     
     # Analyze first few papers
     for i, line in enumerate(lines[:3]):
@@ -42,11 +42,11 @@ def analyze_vector_store_results():
         files = list(Path(".").glob(pattern))
         for file in files:
             if "query" in file.name or "result" in file.name:
-                print(f"\n📄 Found result file: {file}")
+                print(f"\nFound result file: {file}")
                 try:
                     with open(file, 'r') as f:
                         lines = list(f)
-                    print(f"📊 Lines: {len(lines)}")
+                    print(f"Lines: {len(lines)}")
                     
                     if lines:
                         result = json.loads(lines[-1])  # Latest result
@@ -61,9 +61,9 @@ def analyze_vector_store_results():
                                 print(f"First result: {first}")
                                 
                 except Exception as e:
-                    print(f"❌ Error reading {file}: {e}")
+                    print(f"Error reading {file}: {e}")
 
 if __name__ == "__main__":
-    print("🔧 Debug: Metadata Extraction Analysis")
+    print("Debug: Metadata Extraction Analysis")
     analyze_enriched_papers()
     analyze_vector_store_results()

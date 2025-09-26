@@ -61,14 +61,14 @@ if __name__ == "__main__":
     query_stream_dir = "query_stream"
     query_filename = "input_query.jsonl"
 
-    print(f"▶️  Generating keywords from prompt: \"{input_prompt}\"")
+    print(f"Generating keywords from prompt: \"{input_prompt}\"")
     extracted_keywords = extract_keywords_from_prompt(input_prompt)
 
     print("Extracted keywrods: ", extracted_keywords)
 
     # If keyword extraction fails, create fallback keywords from the prompt
     if not extracted_keywords:
-        print("⚠️  API extraction failed, creating fallback keywords from prompt...")
+        print("API extraction failed, creating fallback keywords from prompt...")
         # Simple keyword extraction as fallback
         words = input_prompt.lower().split()
         # Remove common words and keep meaningful terms
@@ -85,7 +85,7 @@ if __name__ == "__main__":
         with open(config_filename, 'w', encoding='utf-8') as f:
             json.dump(config_data, f, indent=4)
         
-        print(f"✅  Successfully extracted keywords and saved them to '{config_filename}'.")
+        print(f"Successfully extracted keywords and saved them to '{config_filename}'.")
         print(f"   Keywords: {extracted_keywords}")
         
         # Create query_stream directory if it doesn't exist
@@ -103,9 +103,9 @@ if __name__ == "__main__":
             json.dump(query_data, f)
             f.write('\n')  # Add newline for JSONL format
         
-        print(f"✅  Created query file '{query_filepath}' for RAG system.")
+        print(f"Created query file '{query_filepath}' for RAG system.")
         print(f"   Query: \"{input_prompt}\"")
         print(f"   Top K: 5")
         print(f"   Keywords: {extracted_keywords}")
     else:
-        print("❌  Could not extract any keywords. The config file was not created.")
+        print("Could not extract any keywords. The config file was not created.")

@@ -175,7 +175,7 @@ def setup_dynamic_content_pipeline():
         mode="streaming",
         autocommit_duration_ms=1000  # Update every 1 second
     )
-    print("📥 Content: streaming from ./content_stream/ (JSONL)")
+    print("Content: streaming from ./content_stream/ (JSONL)")
     
     return content_stream
 
@@ -191,7 +191,7 @@ def setup_dynamic_query_pipeline():
         mode="streaming",
         autocommit_duration_ms=500  # Fast processing for real-time queries
     )
-    print("📨 Queries: streaming from ./query_stream/")
+    print("Queries: streaming from ./query_stream/")
     
     return query_stream
 
@@ -217,18 +217,18 @@ def query_rag_pipeline(vector_store, query_table: pw.Table[QuerySchema]):
     # CRITICAL: Let's debug what the vector store is actually returning
     def _debug_and_process_results(query_results, original_query, keywords):
         """Debug the results structure and process them correctly"""
-        print(f"🔧 DEBUG: Processing results for query: {original_query}")
-        print(f"🔧 DEBUG: Results type: {type(query_results)}")
+        print(f"DEBUG: Processing results for query: {original_query}")
+        print(f"DEBUG: Results type: {type(query_results)}")
         
         # Extract the actual results from Pathway Json object
         actual_results = query_results
         if hasattr(query_results, 'value'):
             actual_results = getattr(query_results, 'value')
-            print(f"🔧 DEBUG: Extracted results from .value, type: {type(actual_results)}")
+            print(f"DEBUG: Extracted results from .value, type: {type(actual_results)}")
         
         if hasattr(actual_results, '__len__'):
             try:
-                print(f"🔧 DEBUG: Results length: {len(actual_results)}")
+                print(f"DEBUG: Results length: {len(actual_results)}")
             except:
                 pass
         
@@ -237,9 +237,9 @@ def query_rag_pipeline(vector_store, query_table: pw.Table[QuerySchema]):
         
         if isinstance(actual_results, list):
             for i, doc in enumerate(actual_results):
-                print(f"🔧 DEBUG: Document {i} type: {type(doc)}")
+                print(f"DEBUG: Document {i} type: {type(doc)}")
                 if hasattr(doc, '__dict__'):
-                    print(f"🔧 DEBUG: Document {i} attributes: {list(doc.__dict__.keys()) if hasattr(doc, '__dict__') else 'N/A'}")
+                    print(f"DEBUG: Document {i} attributes: {list(doc.__dict__.keys()) if hasattr(doc, '__dict__') else 'N/A'}")
                 
                 # Try to extract similarity score before applying filters
                 formatted_doc = format_document(doc)
@@ -348,17 +348,17 @@ def _extract_metadata_from_result(doc) -> dict:
     Based on debug output, we know metadata exists with keys like 'abstract','authors','title','url'
     but it's nested in a complex Pathway Json structure.
     """
-    print(f"🔧 DEBUG: Extracting metadata from {type(doc)}")
+    print(f"DEBUG: Extracting metadata from {type(doc)}")
     
     try:
         # Handle Pathway Json objects with .value containing the actual data
         if hasattr(doc, 'value'):
             doc_data = getattr(doc, 'value')
-            print(f"🔧 DEBUG: Found document data in .value: {list(doc_data.keys()) if isinstance(doc_data, dict) else type(doc_data)}")
+            print(f"DEBUG: Found document data in .value: {list(doc_data.keys()) if isinstance(doc_data, dict) else type(doc_data)}")
             
             # If doc_data is a list, we're probably dealing with a list of results, not a single document
             if isinstance(doc_data, list):
-                print(f"🔧 DEBUG: Document data is a list with {len(doc_data)} items, cannot extract metadata from list")
+                print(f"DEBUG: Document data is a list with {len(doc_data)} items, cannot extract metadata from list")
                 return {}
             
             if isinstance(doc_data, dict):
@@ -369,21 +369,21 @@ def _extract_metadata_from_result(doc) -> dict:
                 # Handle VectorStore result format: {'text': '...', 'metadata': {...}, 'dist': 0.xx}
                 if 'metadata' in doc_data:
                     metadata_obj = doc_data['metadata']
-                    print(f"🔧 DEBUG: metadata_obj type: {type(metadata_obj)}")
+                    print(f"  DEBUG: metadata_obj type: {type(metadata_obj)}")
                     
                     metadata = {}
                     
                     # Handle nested Pathway Json metadata object
                     if hasattr(metadata_obj, 'value'):
                         metadata_raw = getattr(metadata_obj, 'value')
-                        print(f"🔧 DEBUG: metadata from .value: {list(metadata_raw.keys()) if isinstance(metadata_raw, dict) else type(metadata_raw)}")
+                        print(f"  DEBUG: metadata from .value: {list(metadata_raw.keys()) if isinstance(metadata_raw, dict) else type(metadata_raw)}")
                         if isinstance(metadata_raw, dict):
                             metadata = metadata_raw
                     elif isinstance(metadata_obj, dict):
                         metadata = metadata_obj
-                        print(f"🔧 DEBUG: metadata is dict: {list(metadata.keys())}")
+                        print(f"  DEBUG: metadata is dict: {list(metadata.keys())}")
                     else:
-                        print(f"🔧 DEBUG: metadata_obj type not handled: {type(metadata_obj)}")
+                        print(f"  DEBUG: metadata_obj type not handled: {type(metadata_obj)}")
                         # Try to extract directly from attributes if it's an object
                         for field in ['id', 'paper_id', 'title', 'abstract', 'authors', 'url', 'primary_category']:
                             if hasattr(metadata_obj, field):
@@ -400,25 +400,25 @@ def _extract_metadata_from_result(doc) -> dict:
                     if 'distance' in doc_data:
                         metadata['distance'] = doc_data['distance']
                     
-                    print(f"🔧 DEBUG: Final extracted metadata keys: {list(metadata.keys()) if metadata else 'empty'}")
+                    print(f"  DEBUG: Final extracted metadata keys: {list(metadata.keys()) if metadata else 'empty'}")
                     return metadata
                 
                 # If no explicit metadata key, check if doc_data contains the fields directly
                 # (fallback for different VectorStore formats)
                 metadata_fields = ['id', 'paper_id', 'title', 'abstract', 'authors', 'url', 'primary_category', 'file_path']
                 if any(field in doc_data for field in metadata_fields):
-                    print(f"🔧 DEBUG: Found metadata fields directly in doc_data")
+                    print(f"  DEBUG: Found metadata fields directly in doc_data")
                     return doc_data
         
         # Handle standard dictionary
         if isinstance(doc, dict):
-            print(f"🔧 DEBUG: doc is standard dict with keys: {list(doc.keys())}")
+            print(f"  DEBUG: doc is standard dict with keys: {list(doc.keys())}")
             # Check for metadata or _metadata nested keys first
             if 'metadata' in doc and isinstance(doc['metadata'], dict):
-                print(f"🔧 DEBUG: Found nested metadata key in dict")
+                print(f"  DEBUG: Found nested metadata key in dict")
                 return doc['metadata']
             if '_metadata' in doc and isinstance(doc['_metadata'], dict):
-                print(f"🔧 DEBUG: Found nested _metadata key in dict")
+                print(f"  DEBUG: Found nested _metadata key in dict")
                 return doc['_metadata']
             # If no nested metadata, return the whole dict as fallback
             return doc
@@ -426,7 +426,7 @@ def _extract_metadata_from_result(doc) -> dict:
         # Handle objects with metadata attribute
         if hasattr(doc, 'metadata'):
             metadata_obj = getattr(doc, 'metadata')
-            print(f"🔧 DEBUG: Found .metadata attribute: {type(metadata_obj)}")
+            print(f"  DEBUG: Found .metadata attribute: {type(metadata_obj)}")
             if hasattr(metadata_obj, 'value'):
                 return getattr(metadata_obj, 'value')
             elif isinstance(metadata_obj, dict):
@@ -447,31 +447,31 @@ def _extract_metadata_from_result(doc) -> dict:
                     else:
                         metadata[field] = val
             if metadata:
-                print(f"🔧 DEBUG: Extracted metadata from object attributes: {list(metadata.keys())}")
+                print(f"  DEBUG: Extracted metadata from object attributes: {list(metadata.keys())}")
                 return metadata
         
         # Final fallback: try to extract from __dict__ if available
         if hasattr(doc, '__dict__'):
             doc_dict = doc.__dict__
-            print(f"🔧 DEBUG: Trying __dict__ with keys: {list(doc_dict.keys())}")
+            print(f"  DEBUG: Trying __dict__ with keys: {list(doc_dict.keys())}")
             # Look for any metadata-like structure
             for key in doc_dict:
                 val = doc_dict[key]
                 if isinstance(val, dict) and any(field in val for field in ['title', 'abstract', 'authors']):
-                    print(f"🔧 DEBUG: Found metadata in __dict__['{key}']")
+                    print(f"  DEBUG: Found metadata in __dict__['{key}']")
                     return val
                 elif hasattr(val, 'value') and isinstance(getattr(val, 'value'), dict):
                     val_dict = getattr(val, 'value')
                     if any(field in val_dict for field in ['title', 'abstract', 'authors']):
-                        print(f"🔧 DEBUG: Found metadata in __dict__['{key}'].value")
+                        print(f"  DEBUG: Found metadata in __dict__['{key}'].value")
                         return val_dict
         
     except Exception as e:
-        print(f"🔧 ERROR: Error extracting metadata from {type(doc)}: {e}")
+        print(f"  ERROR: Error extracting metadata from {type(doc)}: {e}")
         import traceback
         traceback.print_exc()
     
-    print(f"🔧 WARNING: Could not extract metadata from {type(doc)}")
+    print(f"  WARNING: Could not extract metadata from {type(doc)}")
     return {}
 
 
@@ -487,12 +487,12 @@ def _extract_score_from_result(doc) -> float:
                 for score_key in ['similarity_score', 'score', 'relevance_score', 'dist', 'distance']:
                     if score_key in doc_data and doc_data[score_key] is not None:
                         score_value = doc_data[score_key]
-                        print(f"🔧 DEBUG: Found {score_key} = {score_value}")
+                        print(f"  DEBUG: Found {score_key} = {score_value}")
                         
                         # Handle distance (convert to similarity: similarity = 1 - distance)
                         if score_key in ['dist', 'distance']:
                             similarity = max(0.0, 1.0 - float(score_value))
-                            print(f"🔧 DEBUG: Converted distance {score_value} to similarity {similarity}")
+                            print(f"  DEBUG: Converted distance {score_value} to similarity {similarity}")
                             return similarity
                         else:
                             return float(score_value)
@@ -502,12 +502,12 @@ def _extract_score_from_result(doc) -> float:
             for score_key in ['similarity_score', 'score', 'relevance_score', 'dist', 'distance']:
                 if score_key in doc and doc[score_key] is not None:
                     score_value = doc[score_key]
-                    print(f"🔧 DEBUG: Found {score_key} = {score_value} in dict")
+                    print(f"  DEBUG: Found {score_key} = {score_value} in dict")
                     
                     # Handle distance (convert to similarity)
                     if score_key in ['dist', 'distance']:
                         similarity = max(0.0, 1.0 - float(score_value))
-                        print(f"🔧 DEBUG: Converted distance {score_value} to similarity {similarity}")
+                        print(f"  DEBUG: Converted distance {score_value} to similarity {similarity}")
                         return similarity
                     else:
                         return float(score_value)
@@ -517,7 +517,7 @@ def _extract_score_from_result(doc) -> float:
         for attr_name in score_attrs:
             if hasattr(doc, attr_name):
                 val = getattr(doc, attr_name)
-                print(f"🔧 DEBUG: Found {attr_name}: {val} (type: {type(val)})")
+                print(f"  DEBUG: Found {attr_name}: {val} (type: {type(val)})")
                 if hasattr(val, 'value'):
                     score = getattr(val, 'value')
                     if attr_name in ['dist', 'distance']:
@@ -531,13 +531,13 @@ def _extract_score_from_result(doc) -> float:
                         return float(val)
         
     except (ValueError, TypeError) as e:
-        print(f"🔧 WARNING: Error converting score to float: {e}")
+        print(f"  WARNING: Error converting score to float: {e}")
     except Exception as e:
-        print(f"🔧 ERROR: Error extracting score: {e}")
+        print(f"  ERROR: Error extracting score: {e}")
         import traceback
         traceback.print_exc()
     
-    print(f"🔧 WARNING: Returning default score 0.0 for {type(doc)}")
+    print(f"  WARNING: Returning default score 0.0 for {type(doc)}")
     return 0.0
 
 # (Removed vector cache/fallbacks)
@@ -546,20 +546,20 @@ def format_document(doc):
     """Format a document for output using extracted metadata and score.
     Enhanced to handle Pathway VectorStore format specifically."""
     
-    print(f"🔧 DEBUG: format_document called with {type(doc)}")
+    print(f"  DEBUG: format_document called with {type(doc)}")
     
     # Try to extract metadata first - this is the key function that needs to work
     metadata = _extract_metadata_from_result(doc)
-    print(f"🔧 DEBUG: format_document extracted metadata: {list(metadata.keys()) if metadata else 'None'}")
+    print(f"  DEBUG: format_document extracted metadata: {list(metadata.keys()) if metadata else 'None'}")
     
     # Minimal one-time debug without leaking full text
     if not hasattr(format_document, '_debug_printed'):
         format_document._debug_printed = True
-        print(f"🔧 DEBUG: Formatting documents (type: {type(doc)})")
+        print(f"  DEBUG: Formatting documents (type: {type(doc)})")
     
     # Extract score - also debug this
     score = _extract_score_from_result(doc)
-    print(f"🔧 DEBUG: format_document extracted score: {score}")
+    print(f"  DEBUG: format_document extracted score: {score}")
     
     # Build the formatted document with fallbacks
     formatted = {
@@ -575,7 +575,7 @@ def format_document(doc):
         "matched_keywords": [],
     }
     
-    print(f"🔧 DEBUG: format_document returning: {list(formatted.keys())} with score={formatted['similarity_score']}")
+    print(f"  DEBUG: format_document returning: {list(formatted.keys())} with score={formatted['similarity_score']}")
     
     # If we couldn't extract basic fields from metadata, try direct access
     if formatted["id"] == "unknown" and hasattr(doc, 'paper_id'):
@@ -708,9 +708,9 @@ def print_final_summary(original_query: str, results) -> str:
                         try:
                             extracted_score = _extract_score_from_result(doc)
                             doc = {**doc, "similarity_score": extracted_score}
-                            print(f"🔧 DEBUG: Successfully extracted score {extracted_score} for document with keys {list(doc.keys())}")
+                            print(f"  DEBUG: Successfully extracted score {extracted_score} for document with keys {list(doc.keys())}")
                         except Exception as e:
-                            print(f"🔧 ERROR: Failed to extract score from document: {e}")
+                            print(f"  ERROR: Failed to extract score from document: {e}")
                             doc = {**doc, "similarity_score": 0.0}
                     return doc
                 # Otherwise, build from metadata extractor
@@ -755,26 +755,26 @@ def create_rag_system():
     4. RAG processes new content -> updates database
     5. Other team calls RAG again -> gets results
     """
-    print("🔧 Setting up RAG system for dynamic workflow...")
+    print("  Setting up RAG system for dynamic workflow...")
     
     # Setup dynamic content pipeline (monitors content_stream directory)
     content_table = setup_dynamic_content_pipeline()
-    print("✅ Content pipeline ready - monitoring ./content_stream/")
+    print(" Content pipeline ready - monitoring ./content_stream/")
     
     # Setup vector store that auto-updates when new content arrives
     vector_store, vector_data = setup_dynamic_rag_pipeline(content_table)
-    print("✅ Vector store ready - will auto-update with new papers")
+    print(" Vector store ready - will auto-update with new papers")
     
     # Setup query pipeline (monitors query_stream directory)
     query_table = setup_dynamic_query_pipeline()
-    print("✅ Query pipeline ready - monitoring ./query_stream/")
+    print(" Query pipeline ready - monitoring ./query_stream/")
     
     # Execute queries with keyword filtering
     results = query_rag_pipeline(vector_store, query_table)
     
     # Stream results to output (other team can monitor this)
     pw.io.jsonlines.write(results, "./query_results.jsonl")
-    print("✅ Results will be written to ./query_results.jsonl")
+    print(" Results will be written to ./query_results.jsonl")
 
     # Debug: snapshot what is being embedded
     def _len_or_zero(s: str) -> int:
@@ -909,7 +909,7 @@ def create_rag_system():
 
     # Print incoming queries to console for verification
     def _print_query(q: str, k: int, kws: list[str]) -> str:
-        print(f"➡️ Incoming query: '{q}' | top_k={k} | keywords={kws}")
+        print(f" Incoming query: '{q}' | top_k={k} | keywords={kws}")
         return "seen"
 
     query_printer = query_table.select(status=pw.apply(_print_query, pw.this.query, pw.this.top_k, pw.this.keywords))
@@ -975,7 +975,7 @@ def create_rag_system():
     )
     pw.io.jsonlines.write(answer_printer, "./.answer_prints.jsonl")
     
-    print("\n📋 Workflow Summary:")
+    print("\n  Workflow Summary:")
     print("   1. Other team drops query.jsonl in ./query_stream/")
     print("   2. RAG processes query with keywords")
     print("   3. If no results found -> empty list returned")
@@ -1328,7 +1328,7 @@ if __name__ == "__main__":
     # Setup the complete RAG system
     vector_store, results = create_rag_system()
     
-    print("\n🚀 Running RAG pipeline...")
+    print("\nRunning RAG pipeline...")
     print("   - Monitoring content_stream for new papers")
     print("   - Monitoring query_stream for queries")
     print("   - Writing results to query_results.jsonl")
@@ -1336,10 +1336,10 @@ if __name__ == "__main__":
     # Run the pipeline with minimal monitoring
     pw.run(monitoring_level=pw.MonitoringLevel.NONE)
     
-    print("\n✅ RAG Pipeline is running!")
-    print("📁 Directories created:")
+    print("\n RAG Pipeline is running!")
+    print("Directories created:")
     print("   ./content_stream/ - Other team adds papers here")
     print("   ./query_stream/ - Other team adds queries here") 
     print("   ./query_results.jsonl - Results appear here")
     
-    print("\n🔄 Workflow ready for other team integration!")
+    print("\nWorkflow ready for other team integration!")

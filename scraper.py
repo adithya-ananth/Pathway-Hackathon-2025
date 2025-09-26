@@ -13,7 +13,7 @@ OUTPUT_FILENAME = "arxiv_papers.jsonl"
 def load_keywords_from_config(filename: str) -> list:
     """Loads search keywords from a JSON configuration file."""
     if not os.path.exists(filename):
-        print(f"⚠️  Warning: Config file '{filename}' not found.")
+        print(f"Warning: Config file '{filename}' not found.")
         print("   Using default fallback keywords: ['computer vision', 'robotics']")
         return ["computer vision", "robotics"] # Fallback keywords
     
@@ -23,10 +23,10 @@ def load_keywords_from_config(filename: str) -> list:
             keywords = config_data.get("search_keywords", [])
             if not keywords:
                 raise ValueError("No keywords found in config file.")
-            print(f"✅  Successfully loaded keywords from '{filename}': {keywords}")
+            print(f"Successfully loaded keywords from '{filename}': {keywords}")
             return keywords
     except (json.JSONDecodeError, ValueError) as e:
-        print(f"❌  Error reading config file '{filename}': {e}")
+        print(f"Error reading config file '{filename}': {e}")
         print("   Using default fallback keywords: ['computer vision', 'robotics']")
         return ["computer vision", "robotics"] # Fallback keywords
 
@@ -36,7 +36,7 @@ def fetch_and_save_arxiv_papers():
     Fetches the latest paper metadata from arXiv based on keywords from the config
     file and saves it as a JSON Lines file.
     """
-    print("\n🚀 Starting arXiv paper metadata fetch...")
+    print("\n Starting arXiv paper metadata fetch...")
     
     # Load keywords from the external config file
     search_keywords = load_keywords_from_config(CONFIG_FILENAME)
@@ -54,10 +54,10 @@ def fetch_and_save_arxiv_papers():
         response = requests.get(full_url)
         response.raise_for_status()
     except requests.exceptions.RequestException as e:
-        print(f"❌ API request failed: {e}")
+        print(f"API request failed: {e}")
         return
 
-    print("✅  Successfully fetched data from arXiv.")
+    print("Successfully fetched data from arXiv.")
     data_dict = xmltodict.parse(response.content)
     
     entries = data_dict.get('feed', {}).get('entry', [])
@@ -65,7 +65,7 @@ def fetch_and_save_arxiv_papers():
         entries = [entries] if entries else []
 
     if not entries:
-        print("⚠️  No papers found for the given keywords. The output file will be empty.")
+        print("No papers found for the given keywords. The output file will be empty.")
         return
 
     papers = []
@@ -88,15 +88,15 @@ def fetch_and_save_arxiv_papers():
             }
             papers.append(paper_info)
         except Exception as e:
-            print(f"⚠️ Warning: Could not parse an entry. Skipping. Error: {e}")
+            print(f"Warning: Could not parse an entry. Skipping. Error: {e}")
 
     try:
         with open(OUTPUT_FILENAME, 'w', encoding='utf-8') as f:
             for paper in papers:
                 f.write(json.dumps(paper) + '\n')
-        print(f"\n✅  Successfully saved {len(papers)} paper metadata entries to '{OUTPUT_FILENAME}'.")
+        print(f"\nSuccessfully saved {len(papers)} paper metadata entries to '{OUTPUT_FILENAME}'.")
     except IOError as e:
-        print(f"❌ Failed to write to file: {e}")
+        print(f"Failed to write to file: {e}")
 
 
 if __name__ == "__main__":
