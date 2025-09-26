@@ -24,6 +24,13 @@ def read_text_from_file(file_path: str) -> str:
     with open(resolved_path, "r", encoding="utf-8") as f:
         return f.read()
 
+# ------------------------------------------------------------------
+# In-memory capture for one-shot runs (static mode).
+# These are populated via Python sinks when the pipeline runs.
+# ------------------------------------------------------------------
+LAST_COMPREHENSIVE_ANSWER: str | None = None
+LAST_TOP5_DOCS: list[dict] | None = None
+
 class ContentSchema(pw.Schema):
     # Match content_stream/complete_papers_data.jsonl exactly
     paper_id: str
@@ -604,6 +611,11 @@ def create_rag_system():
     3. Other team searches web -> adds papers to content_stream
     4. RAG processes new content -> updates database
     5. Other team calls RAG again -> gets results
+
+    returns (vector_store, answer, top5_docs)
+    - vector_store: the Pathway VectorStoreServer instance
+    - answer: the comprehensive answer string (or None if not generated)
+    - top5_docs: list of top 5 formatted document dicts (or None if
     """
     print("🔧 Setting up RAG system for dynamic workflow...")
     
@@ -767,6 +779,31 @@ def create_rag_system():
     )
     pw.io.jsonlines.write(comprehensive_answers, "./comprehensive_answers.jsonl")
     
+    # Extract top-5 docs used for answer (formatted docs as JSON-like dicts)
+    def _top5(rs: list[dict]) -> list[dict]:
+        try:
+            return list(rs[:5]) if rs else []
+        except Exception:
+            return []
+
+    top5_docs = results.select(
+        query=pw.this.original_query,
+        top5=pw.apply(_top5, pw.this.results),
+    )
+
+    # Capture answer and docs into globals for return when run_now=True
+    def _capture(answer: str, docs: list[dict]) -> str:
+        global LAST_COMPREHENSIVE_ANSWER, LAST_TOP5_DOCS
+        LAST_COMPREHENSIVE_ANSWER = answer
+        LAST_TOP5_DOCS = docs
+        return "captured"
+
+    capture = comprehensive_answers.join(top5_docs, pw.left.query == pw.right.query).select(
+        status=pw.apply(_capture, pw.left.comprehensive_answer, pw.right.top5)
+    )
+    # Materialize capture so it executes
+    pw.io.jsonlines.write(capture, "./.capture.jsonl")
+
     # Print the comprehensive answer to console
     answer_printer = comprehensive_answers.select(
         status=pw.apply(
@@ -785,7 +822,9 @@ def create_rag_system():
     print("   5. RAG auto-updates database with new papers")
     print("   6. Other team queries again -> gets results")
     
-    return vector_store, results
+    # Always execute the pipeline in one-shot mode and return captured values
+    pw.run(monitoring_level=pw.MonitoringLevel.NONE)
+    return vector_store, LAST_COMPREHENSIVE_ANSWER, LAST_TOP5_DOCS
 
 
 def _safe_get_from_doc(doc, key: str, default=None):
@@ -1092,21 +1131,22 @@ def main():
     """
     print("=== Dynamic RAG Pipeline for Team Integration ===\n")
     
-    # Setup the complete RAG system
-    vector_store, results = create_rag_system()
+    # Setup the complete RAG system and run once
+    vector_store, answer, top5_docs = create_rag_system()
     
-    print("\n🚀 Running RAG pipeline...")
-    print("   - Monitoring content_stream for new papers")
-    print("   - Monitoring query_stream for queries")
-    print("   - Writing results to query_results.jsonl")
-    
-    # Run the pipeline with minimal monitoring
-    pw.run(monitoring_level=pw.MonitoringLevel.NONE)
-    
-    print("\n✅ RAG Pipeline is running!")
-    print("📁 Directories created:")
+    print("\n✅ One-shot RAG pipeline completed!")
+    print("📁 Directories used:")
     print("   ./content_stream/ - Other team adds papers here")
     print("   ./query_stream/ - Other team adds queries here") 
     print("   ./query_results.jsonl - Results appear here")
     
+    # If needed elsewhere, these values are also returned by create_rag_system(run_now=True)
+    if answer is not None:
+        print("\n� Captured comprehensive answer string in-memory.")
+    if top5_docs is not None:
+        print("📦 Captured top-5 docs list in-memory.")
+    
     print("\n🔄 Workflow ready for other team integration!")
+
+    # Return values for programmatic use
+    return vector_store, answer, top5_docs
