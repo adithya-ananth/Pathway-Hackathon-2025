@@ -394,7 +394,7 @@ class DoclingParser(pw.UDF):
 
 
 
-def parse_papers_to_text():
+def parse_and_save_papers():
     # Read the list of doc_ids from the JSONL file
     doc_ids = []
     file_path = "arxiv_papers.jsonl"
