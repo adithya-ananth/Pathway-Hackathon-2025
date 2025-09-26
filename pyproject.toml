@@ -16,6 +16,9 @@ pdfminer = "^20191125"
 matplotlib = "^3.9.0"
 transformers = "^4.45.0"
 pdfminer-six = "^20250506"
+fastapi = "^0.117.1"
+pydantic = "^2.11.9"
+uvicorn = "^0.37.0"
 
 
 [build-system]
