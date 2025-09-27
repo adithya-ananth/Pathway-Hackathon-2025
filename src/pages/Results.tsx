@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { Search, Lightbulb, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -50,6 +50,7 @@ export default function Results() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const { toast } = useToast();
+  const lastSearchedRef = useRef<string | null>(null);
 
   const initialQuery = searchParams.get('q');
 
@@ -61,8 +62,13 @@ export default function Results() {
   }, [initialQuery]);
 
   const performSearch = async (searchQuery: string) => {
-    if (!searchQuery.trim()) return;
+    const normalized = searchQuery.trim();
+    if (!normalized) return;
+    // Prevent duplicate/in-flight searches
+    if (isLoading) return;
+    if (lastSearchedRef.current === normalized) return;
 
+    lastSearchedRef.current = normalized;
     setIsLoading(true);
     setResponse(null);
 
@@ -236,6 +242,7 @@ export default function Results() {
       });
     } catch (error) {
       console.error("Error fetching research:", error);
+      lastSearchedRef.current = null; // allow retry on same query if failed
       toast({
         title: "Research Failed",
         description: "Unable to connect to the research API. Please try again.",
@@ -247,7 +254,8 @@ export default function Results() {
   };
 
   const handleSearch = async () => {
-    if (!query.trim()) {
+    const normalized = query.trim();
+    if (!normalized) {
       toast({
         title: "Please enter a research topic",
         description: "Enter a topic you'd like to explore to get started.",
@@ -255,10 +263,14 @@ export default function Results() {
       });
       return;
     }
-
-    // Update URL and perform search
-    navigate(`/results?q=${encodeURIComponent(query)}`);
-    await performSearch(query);
+    const currentQ = searchParams.get('q') || '';
+    if (currentQ.trim() === normalized) {
+      // If URL already has this query, run search directly
+      await performSearch(normalized);
+    } else {
+      // Otherwise update URL and let useEffect trigger the search
+      navigate(`/results?q=${encodeURIComponent(normalized)}`);
+    }
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
