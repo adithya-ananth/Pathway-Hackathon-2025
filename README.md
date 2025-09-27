@@ -12,24 +12,24 @@ GEMINI_API_KEY_EXTRACT=your_key_here
 GEMINI_API_KEY_ENRICH=your_key_here
 GEMINI_API_KEY_SUMMARIZE=your_key_here
 ```
-### 3. Set up virtual environment
+### 3. Set up virtual environment in backend
 ```
+cd backend
 python -m venv env
 source env/bin/activate
 ```
-### 4. Install the required libraries from the requirements.txt file using pip
+### 4. Install the required libraries from the requirements.txt file using pip into backend
 ```
 pip install -r requirements.txt
 ```
 ### 5. Run the backend
 ```
-cd backend
 pip install -r requirements.txt
 uvicorn main:app --port 8080
 ```
 ### 6. Run the frontend
 ```
-cd frontend
+cd ../frontend
 npm install
 npm run dev
 ```
