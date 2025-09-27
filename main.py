@@ -4,13 +4,16 @@ import parser
 import enrich_papers
 import rag.main
 
-
+import os
 from fastapi import FastAPI
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 
 
 app = FastAPI()
+os.makedirs("./content_stream", exist_ok=True)
+os.makedirs("./query_stream", exist_ok=True)
+os.makedirs("./papers_text", exist_ok=True)
 
 # CORS: permissive configuration (allow all origins, methods, and headers)
 app.add_middleware(
