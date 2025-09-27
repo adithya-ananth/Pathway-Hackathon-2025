@@ -23,7 +23,7 @@ def extract_keywords_from_prompt(user_prompt: str) -> List[str]:
     Uses the Gemini API to extract keywords from a user prompt.
     Returns a list of keyword strings.
     """
-    model = genai.GenerativeModel("gemini-2.0-flash-lite") # Using 1.5-flash for potentially better extraction
+    model = genai.GenerativeModel("gemini-2.0-flash-lite") # Using 2.0-flash-lite for potentially better extraction
     prompt_template = f"""
     You are an expert at identifying specific, technical keywords and topics from research paper queries.
     Given a user's prompt, extract the main topics, research areas, and keywords.
@@ -104,7 +104,7 @@ def run_keyword_extraction(input_prompt: str) -> None:
             json.dump(query_data, f)
             f.write('\n')  # Add newline for JSONL format
         
-        print(f"Created query file '{query_filepath}' for RAG system.")
+        print(f"Created and @Ankit IIT TP CSE Junior query file '{query_filepath}' for RAG system.")
         print(f"   Query: \"{input_prompt}\"")
         print(f"   Top K: 5")
         print(f"   Keywords: {extracted_keywords}")

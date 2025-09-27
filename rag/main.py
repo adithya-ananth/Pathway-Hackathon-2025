@@ -1,10 +1,22 @@
-import pathway as pw
 from pathway.xpacks.llm import embedders
 from pathway.xpacks.llm.vector_store import VectorStoreServer
+from dotenv import load_dotenv
+
+import pathway as pw
+import google.generativeai as genai
 import os
+
 # ----------------------------
 # Helpers (module-level)
 # ----------------------------
+
+# --- Configuration ---
+load_dotenv()
+API_KEY = os.getenv("GEMINI_API_KEY_SUMMARIZE")
+if not API_KEY:
+    raise ValueError("GEMINI_API_KEY not found. Please set it in your .env file.")
+
+genai.configure(api_key=API_KEY)
 
 def _resolve_project_path(relative_or_abs_path: str) -> str:
     """Resolve relative file paths like 'papers_text/xyz.txt' relative to repo root."""
@@ -1006,7 +1018,42 @@ Matched Terms: {', '.join(str(kw) for kw in matched_kws) if matched_kws else 'No
         safe_matched_keywords = set(str(kw) for kw in all_matched_keywords if kw)
         answer_parts.append(f"You may also want to search for related terms such as: {_suggest_related_keywords(keywords, safe_matched_keywords)}.")
     
-    return '\n'.join(answer_parts)
+    full_answer = '\n'.join(answer_parts)
+
+    # key_findings_json = json.dumps(key_findings[:7], ensure_ascii=False, indent=2)
+
+    # for doc in document_summaries:
+    #     print("\n\nDOC info: ", doc)
+
+    # Use Gemini to summarize the information into an answer
+    if key_findings:
+        docs_text = "\n\n".join([
+            f"Title: {doc['title']}\nAbstract: {doc['abstract']}"
+            for doc in key_findings
+        ])
+
+        model = genai.GenerativeModel("gemini-2.0-flash-lite")
+        prompt = f"""
+You are an expert research assistant.
+The user query is: "{query}"
+
+I will give you several research papers with their titles, and abstracts.
+
+Use this information as reference to answer the query. 
+Write a clear, factual answer.
+Then list the titles of the papers you used under '### Sources'.
+
+PAPERS:
+{docs_text}
+"""
+        try:
+            response = model.generate_content(prompt)
+            return response.text.strip()
+        except Exception as e:
+            print("Gemini summarization failed:", e)
+            return full_answer  # fallback
+
+    return full_answer
 
 
 def _extract_common_themes(key_findings: list[dict]) -> list[str]:
@@ -1134,19 +1181,19 @@ def main():
     # Setup the complete RAG system and run once
     vector_store, answer, top5_docs = create_rag_system()
     
-    print("\n✅ One-shot RAG pipeline completed!")
-    print("📁 Directories used:")
+    print("\nOne-shot RAG pipeline completed!")
+    print("Directories used:")
     print("   ./content_stream/ - Other team adds papers here")
     print("   ./query_stream/ - Other team adds queries here") 
     print("   ./query_results.jsonl - Results appear here")
     
     # If needed elsewhere, these values are also returned by create_rag_system(run_now=True)
     if answer is not None:
-        print("\n� Captured comprehensive answer string in-memory.")
+        print("\nCaptured comprehensive answer string in-memory.")
     if top5_docs is not None:
-        print("📦 Captured top-5 docs list in-memory.")
+        print("Captured top-5 docs list in-memory.")
     
-    print("\n🔄 Workflow ready for other team integration!")
+    print("\nWorkflow ready for other team integration!")
 
     # Return values for programmatic use
     return vector_store, answer, top5_docs
