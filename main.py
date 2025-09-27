@@ -7,9 +7,19 @@ import rag.main
 
 from fastapi import FastAPI
 from pydantic import BaseModel
+from fastapi.middleware.cors import CORSMiddleware
 
 
 app = FastAPI()
+
+# CORS: permissive configuration (allow all origins, methods, and headers)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"]
+)
 
 class PromptRequest(BaseModel):
     prompt: str
