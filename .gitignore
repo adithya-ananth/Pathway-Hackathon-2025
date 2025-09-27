@@ -1,3 +1,33 @@
+## FRONTEND
+
+# Logs
+frontend/logs
+frontend/*.log
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+frontend/pnpm-debug.log*
+frontend/lerna-debug.log*
+
+frontend/node_modules
+frontend/dist
+frontend/dist-ssr
+frontend/*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.github
+
+## BACKEND
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -322,25 +352,24 @@ embeddings_cache/
 search_index/
 
 # Generated query results (except the main one)
-query_results_*.jsonl
-search_results_*.json
+backend/query_results_*.jsonl
+backend/search_results_*.json
 
 # Evaluation and benchmark results
-eval_results/
-benchmark_results/
+backend/eval_results/
+backend/benchmark_results/
 
 # Miscellaneous
-RAG_IMPLEMENTATION_SUMMARY.md
-query_results.jsonl
-rag/main_backup.py
-RAG_IMPLEMENTATION_SUMMARY_backup.md
-external_team_example.py
-README_INTEGRATION.md
+backend/RAG_IMPLEMENTATION_SUMMARY.md
+backend/query_results.jsonl
+backend/rag/main_backup.py
+backend/RAG_IMPLEMENTATION_SUMMARY_backup.md
+backend/external_team_example.py
+backend/README_INTEGRATION.md
 
-EXTERNAL_TEAM_GUIDE.md
-test_dynamic_rag.py
+backend/EXTERNAL_TEAM_GUIDE.md
+backend/test_dynamic_rag.py
 
-config.json
-arxiv_papers.jsonl
-papers_text/
-
+backend/config.json
+backend/arxiv_papers.jsonl
+backend/papers_text/
