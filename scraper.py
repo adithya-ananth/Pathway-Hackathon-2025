@@ -7,7 +7,7 @@ import os
 # --- Configuration ---
 # --- MODIFICATION: Read keywords from a config file ---
 CONFIG_FILENAME = "config.json"
-MAX_RESULTS = 20
+MAX_RESULTS = 5
 OUTPUT_FILENAME = "arxiv_papers.jsonl"
 
 def load_keywords_from_config(filename: str) -> list:
@@ -44,14 +44,19 @@ def fetch_and_save_arxiv_papers():
     # Build the search query from the loaded keywords
     search_query = "+".join([f'all:"{urllib.parse.quote(kw)}"' for kw in search_keywords])
     
-    query = f"search_query={search_query}&sortBy=relevance&sortOrder=descending&max_results={MAX_RESULTS}"
-    full_url = "http://export.arxiv.org/api/query?" + query
+    # relavance
+    query1 = f"search_query={search_query}&sortBy=relevance&sortOrder=descending&max_results={MAX_RESULTS}"
+    full_url1 = "http://export.arxiv.org/api/query?" + query1
 
-    print("URL = ",full_url)
+    # latest
+    query2 = f"search_query={search_query}&sortBy=submittedDate&sortOrder=descending&max_results={MAX_RESULTS}"
+    full_url2 = "http://export.arxiv.org/api/query?" + query2
+
+    print("URL = ",full_url1)
     
-    print(f"   Querying API: {full_url[:150]}...") # Print a truncated URL
+    print(f"   Querying API: {full_url1[:150]}...") # Print a truncated URL
     try:
-        response = requests.get(full_url)
+        response = requests.get(full_url1)
         response.raise_for_status()
     except requests.exceptions.RequestException as e:
         print(f"API request failed: {e}")
@@ -64,9 +69,28 @@ def fetch_and_save_arxiv_papers():
     if not isinstance(entries, list):
         entries = [entries] if entries else []
 
-    if not entries:
+    print("URL = ",full_url2)
+    
+    print(f"   Querying API: {full_url2[:150]}...") # Print a truncated URL
+    try:
+        response = requests.get(full_url2)
+        response.raise_for_status()
+    except requests.exceptions.RequestException as e:
+        print(f"API request failed: {e}")
+        return
+
+    print("Successfully fetched data from arXiv.")
+    data_dict = xmltodict.parse(response.content)
+    
+    entries2 = data_dict.get('feed', {}).get('entry', [])
+    if not isinstance(entries2, list):
+        entries2 = [entries2] if entries2 else []
+
+    if not entries and not entries2:
         print("No papers found for the given keywords. The output file will be empty.")
         return
+
+    entries = entries + entries2
 
     papers = []
     for entry in entries:
