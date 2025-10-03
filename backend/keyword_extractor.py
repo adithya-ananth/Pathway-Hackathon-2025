@@ -106,7 +106,7 @@ def run_keyword_extraction(input_prompt: str) -> None:
         
         print(f"Created query file '{query_filepath}' for RAG system.")
         print(f"   Query: \"{input_prompt}\"")
-        print(f"   Top K: 5")
+        print(f"   Top K: 3")
         print(f"   Keywords: {extracted_keywords}")
     else:
         print("Could not extract any keywords. The config file was not created.")
