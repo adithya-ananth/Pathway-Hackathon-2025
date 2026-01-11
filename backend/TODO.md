@@ -117,7 +117,63 @@
     - Note: This file is already compatible and requires no refactoring
 
 - [] Remove Emojis from codebase
-  - [] **rag/vector_store.py** - Remove 📥 emoji from print statements
-  - [] **rag/query.py** - Remove 📨 emoji from print statements
-  - [] **rag/main.py** - Remove ✅ and 📋 emojis from print statements
-  - [] Check all other Python files for emoji usage 
+  - [] **rag/vector_store.py** - Remove 📥 emoji from print statement (line 20)
+  - [] **rag/query.py** - Remove 📨 emoji from print statement (line 14)
+  - [] **rag/main.py** - Remove ✅ emojis from print statements (lines 21, 24, 27, 32)
+  - [] **rag/main.py** - Remove 📋 emoji from print statement (line 151)
+
+- [] Additional Refactoring for Post-Migration Compatibility:
+  
+  - [] **Step 14: pyproject.toml** - Update Poetry dependencies
+    - Remove: `pathway = {extras = ["xpack-llm"], version = "^0.26.1"}`
+    - Add: `langchain = "^0.2.0"` (or latest stable version)
+    - Add: `langchain-community = "^0.2.0"`
+    - Add: `langchain-google-genai = "^0.1.0"`
+    - Add: `faiss-cpu = "^1.8.0"` (or `faiss-gpu` for GPU support)
+    - Keep: `sentence-transformers = "^5.1.0"` (already present)
+    - Note: Run `poetry lock --no-update` after changes to update lock file
+  
+  - [] **Step 15: Data Flow & File Dependencies** - Verify integration points
+    - Verify: `keyword_extractor.run_keyword_extraction()` creates `config.json` and `query_stream/input_query.jsonl`
+    - Verify: `scraper.fetch_and_save_arxiv_papers()` reads `config.json` and writes `arxiv_papers.jsonl`
+    - Verify: `parser.parse_and_save_papers()` reads `arxiv_papers.jsonl` and writes to `papers_text/*.txt`
+    - Verify: `enrich_papers.main()` reads `arxiv_papers.jsonl` and `papers_text/*.txt`, writes `content_stream/enriched_papers.jsonl`
+    - Verify: `rag.main.main()` reads `query_stream/input_query.jsonl` and `content_stream/enriched_papers.jsonl`
+    - Verify: Return value format from `rag.main.main()` matches `(vector_store, answer, documents)` expected by root `main.py`
+    - Test: Ensure all intermediate files are created in correct directories
+  
+  - [] **Step 16: rag/config.py** - Update global state management
+    - Review: `LAST_COMPREHENSIVE_ANSWER` and `LAST_TOP5_DOCS` usage pattern
+    - Update: Ensure these globals are properly set in LangChain version
+    - Consider: Refactoring to return values directly instead of using globals
+    - Verify: `config.LAST_COMPREHENSIVE_ANSWER` and `config.LAST_TOP5_DOCS` are accessible from `main.py`
+  
+  - [] **Step 17: Error Handling & Edge Cases**
+    - Add: Proper error handling in `main.py` FastAPI endpoint for each pipeline step
+    - Add: Validation that files exist before reading (e.g., check `config.json` exists before scraper runs)
+    - Add: Graceful fallbacks if any step fails (currently the whole pipeline fails)
+    - Add: Logging instead of print statements for production readiness
+    - Consider: Making pipeline steps resumable (skip steps if output files already exist)
+  
+  - [] **Step 18: Return Value Alignment**
+    - Verify: `rag.main.main()` returns tuple `(vector_store, answer, top5_docs)`
+    - Update: Root `main.py` expects `documents` but gets `top5_docs` - ensure naming consistency
+    - Verify: `answer` is the comprehensive answer string (matches `LAST_COMPREHENSIVE_ANSWER`)
+    - Verify: `top5_docs` is a list of formatted document dicts (matches `LAST_TOP5_DOCS`)
+    - Test: FastAPI response structure matches frontend expectations
+  
+  - [] **Step 19: Directory Structure & File Paths**
+    - Verify: All hardcoded paths use relative paths from project root
+    - Verify: Directory creation (`os.makedirs`) happens before file writes in all modules
+    - Verify: File path resolution in `rag/utils.py` works correctly for all modules
+    - Test: Pipeline works when run from different working directories
+    - Consider: Using pathlib for cross-platform compatibility
+  
+  - [] **Step 20: Testing & Validation**
+    - Test: End-to-end pipeline with sample prompt
+    - Test: Each module independently after LangChain migration
+    - Verify: No Pathway imports remain (run `grep -r "import pathway" *.py`)
+    - Verify: All emojis removed (run `grep -rP "[🔧📥📨✅📋]" *.py`)
+    - Test: FastAPI `/prompt` endpoint returns expected JSON structure
+    - Test: Error scenarios (missing API keys, network failures, invalid inputs)
+    - Performance: Compare speed with/without vector store caching 
