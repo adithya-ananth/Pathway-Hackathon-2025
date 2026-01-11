@@ -1,0 +1,2 @@
+- [] Refactor whole codebase to use Langchain
+- [] Remove Emojis from codebase 
